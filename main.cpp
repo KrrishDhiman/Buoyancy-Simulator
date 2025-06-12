@@ -710,7 +710,7 @@ int main()
 
 		// 4. BIND TEXTURE BEFORE UPDATING
 		glBindTexture(GL_TEXTURE_2D, texture);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, cells, cells, GL_RED, GL_FLOAT, divergence);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, cells, cells, GL_RED, GL_FLOAT, fluid);
 
 		// 5. ACTIVATE TEXTURE UNIT BEFORE RENDERING
 		glActiveTexture(GL_TEXTURE0);
