@@ -11,6 +11,32 @@ float clamp(float value, float minVal, float maxVal) {
 	return value;
 }
 
+/// DIVERGENCE DEBUGGING
+bool showDivergence = false;
+GLuint fluidProgram, divergenceProgram;
+GLuint fluidTexture, divergenceTexture;
+
+
+GLuint createShaderProgram(const char* vertSrc, const char* fragSrc) {
+	GLuint vertShader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vertShader, 1, &vertSrc, NULL);
+	glCompileShader(vertShader);
+
+	GLuint fragShader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fragShader, 1, &fragSrc, NULL);
+	glCompileShader(fragShader);
+
+	GLuint program = glCreateProgram();
+	glAttachShader(program, vertShader);
+	glAttachShader(program, fragShader);
+	glLinkProgram(program);
+
+	glDeleteShader(vertShader);
+	glDeleteShader(fragShader);
+
+	return program;
+}
+
 
 
 double gravity = -1.f;
@@ -24,7 +50,7 @@ float screensize = 1.5f;
 
 const int cells = 256;
 const float stepsize = 1.5f / cells;
-float center = cells * stepsize / 2 - 0.75f;
+//float center = cells * stepsize / 2 - 0.75f;
 float p[cells][cells] = { 0.f };
 float(*u)[cells] = new float[cells + 1][cells];
 
@@ -104,7 +130,7 @@ void CalculateDivergence(int i, int j) {
 		divergence[i][j] = du_dx + dv_dy;
 	}
 	else
-		divergence[i][j] = 0.f;
+	divergence[i][j] = 0.f;
 }
 
 void CalculatePressure(int i, int j) {
@@ -252,7 +278,7 @@ void Tick(double dt) {
 	for (int i = 0; i <= cells - 1; ++i)
 		for (int j = 1; j <= cells - 1; ++j) {
 			/// Should I check whether the fluid is there ?
-			if (fluid[i][j] != 0.f  and fluid[i][j - 1] != 0.f)
+			if (fluid[i][j] != 0.f or fluid[i][j - 1] != 0.f)
 				v[i][j] += dvG;
 			//	printf("fluid = %f\n", fluid[i][j]);
 		}
@@ -266,8 +292,8 @@ void Tick(double dt) {
 		//	printf("pressure = %f\n", p[i][j]);
 	}
 
-	const double max_error = (float)1e-3;
-	const int max_iter = 50;
+	const double max_error = (float)1e-6;
+	const int max_iter = 80;
 	double max_delta = 0.f;
 	float old_p = 0.f;
 	int iter;
@@ -284,7 +310,7 @@ void Tick(double dt) {
 						- divergence[i][j] * dx2bydt) / 4.f;
 					p[i][j] = old_p + (1.8) * (new_p - old_p);
 					//	p[i][j] *= (float)is_fluid(i, j);
-					max_delta = fmax(max_delta, fabs(p[i][j] - old_p));
+					max_delta = fabs(p[i][j] - old_p);
 				}
 				else {
 					p[i][j] = 0.f; continue;
@@ -296,7 +322,8 @@ void Tick(double dt) {
 		if (max_delta < max_error) break;
 	}
 
-//	printf("error = %f\n", max_delta);
+//	printf("error = %0.15f\n", max_delta);
+	printf("iter = %d\n", iter);
 
 	// Apply Neumann BCs after each full grid sweep
 	for (int j = 0; j < cells; ++j) {
@@ -508,18 +535,18 @@ void Tick(double dt) {
 	delete[] temp_fluid;
 
 	// Stability Condition work
-	float Umax = 0;
+/*	float Umax = 0;
 	for(int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
 			if (fabs(u[a][b]) > Umax)
 				Umax = u[a][b];
 			if (fabs(v[a][b]) > Umax)
 				Umax = v[a][b];
-		}
-	Umax += sqrt(5 * dx * -gravity);
+		}*/
+//	Umax += sqrt(5 * dx * -gravity);
 
 
-	printf("const = %f\n", Umax * dt / dx);
+//	printf("const = %f\n", Umax * dt / dx);
 
 }
 
@@ -578,14 +605,30 @@ int main()
 		"    texCoord = aTexCoord;\n"
 		"}\0";
 
-	const char* fragmentShaderSrc =
-		"#version 330 core\n"
-		"in vec2 texCoord;\n"
-		"out vec4 fragColor;\n"
-		"uniform sampler2D screenTexture;\n"
-		"void main() {\n"
-		"    fragColor = texture(screenTexture, texCoord);\n"
-		"}\0";
+	const char* fragmentShaderSrc = R"(
+#version 330 core
+in vec2 texCoord;
+out vec4 fragColor;
+uniform sampler2D tex;
+
+void main() {
+    float density = texture(tex, texCoord).r;
+    
+    // Background color (dark blue/black)
+    vec3 bgColor = vec3(0.0, 0.0, 0.0);
+    
+    // Fluid color (vibrant blue)
+    vec3 fluidColor = vec3(0.0, 0.0, 0.4);
+    
+    // Add glow effect at higher densities
+    float glow = smoothstep(0.3, 1.0, density);
+    
+    // Blend between background and fluid with glow
+    vec3 color = mix(bgColor, fluidColor, density + glow*0.5);
+    
+    fragColor = vec4(color, 1.0);
+}
+)";
 
 	glPixelStorei(GL_UNPACK_ROW_LENGTH, cells);
 	glPixelStorei(GL_UNPACK_SWAP_BYTES, GL_FALSE);
@@ -624,6 +667,8 @@ int main()
 		glGetProgramInfoLog(shaderProgram, 512, 0, infoLog);
 		std::cout << "Failed to link the shader program! ERR: " << infoLog << std::endl;
 	}
+	
+
 
 	glDeleteShader(vertexShader);
 	glDeleteShader(fragmentShader);
@@ -632,6 +677,37 @@ int main()
 	// Create texture
 	unsigned int texture;
 	glGenTextures(1, &texture);
+	// Divergence Debugging
+	glGenTextures(1, &divergenceTexture);
+
+	// Initialize both textures
+	for (GLuint tex : {fluidTexture, divergenceTexture}) {
+		glBindTexture(GL_TEXTURE_2D, tex);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, cells, cells, 0, GL_RED, GL_FLOAT, nullptr);
+	}
+
+	// Create fluid shader program (your original) CHECK WHETHER fragmentShaderSrc or what
+	fluidProgram = createShaderProgram(vertexShaderSrc, fragmentShaderSrc);
+
+	// Create divergence shader program
+	const char* divergenceFragShaderSrc = R"(
+	#version 330 core
+	in vec2 texCoord;
+	out vec4 fragColor;
+	uniform sampler2D tex;
+	uniform float maxValue;
+
+	void main() {
+		float val = texture(tex, texCoord).r / maxValue;
+		fragColor = vec4(val > 0.0 ? vec3(val, 0, 0) : vec3(0, 0, -val), 1.0);
+	}
+	)";
+
+	divergenceProgram = createShaderProgram(vertexShaderSrc, divergenceFragShaderSrc);
+
+
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -697,6 +773,19 @@ int main()
 
 	while (!glfwWindowShouldClose(window)) {
 		processInput(window);
+
+		// Toggle visualization when D is pressed
+		static bool dKeyPressed = false;
+		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+			if (!dKeyPressed) {
+				showDivergence = !showDivergence;
+				dKeyPressed = true;
+			}
+		}
+		else {
+			dKeyPressed = false;
+		}
+
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
@@ -709,16 +798,49 @@ int main()
 	//	printf("FPS = %f\n", 1/dt);
 
 		// 4. BIND TEXTURE BEFORE UPDATING
-		glBindTexture(GL_TEXTURE_2D, texture);
+		// Update textures
+		glBindTexture(GL_TEXTURE_2D, fluidTexture);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, cells, cells, GL_RED, GL_FLOAT, fluid);
+
+		glBindTexture(GL_TEXTURE_2D, divergenceTexture);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, cells, cells, GL_RED, GL_FLOAT, divergence);
+
+		// Choose program and texture based on mode
+		GLuint currentProgram;
+		GLuint currentTexture;
+		float maxValue = 1.0f;  // Default for fluid
+
+		if (showDivergence) {
+			currentProgram = divergenceProgram;
+			currentTexture = divergenceTexture;
+
+			// Calculate max divergence for normalization
+			maxValue = 0.0f;
+			for (int i = 0; i < cells; i++)
+				for(int j = 0; j < cells; j++){
+				maxValue = fmax(maxValue, fabs(divergence[i][j]));
+			}
+			if (maxValue < 0.001f) maxValue = 1.0f;  // Avoid division by zero
+		}
+		else {
+			currentProgram = fluidProgram;
+			currentTexture = fluidTexture;
+		}
+
 
 		// 5. ACTIVATE TEXTURE UNIT BEFORE RENDERING
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture);
 
-		glUseProgram(shaderProgram);
+		// Render
+		glUseProgram(currentProgram);
+		glUniform1f(glGetUniformLocation(currentProgram, "maxValue"), maxValue);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, currentTexture);
 		glBindVertexArray(VAO);
 		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
