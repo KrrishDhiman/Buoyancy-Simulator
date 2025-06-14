@@ -39,7 +39,7 @@ GLuint createShaderProgram(const char* vertSrc, const char* fragSrc) {
 
 
 
-double gravity = -1.f;
+double gravity = -2.f;
 
 double prevTime = 0.0f;
 
@@ -91,7 +91,7 @@ bool is_fluid(int i, int j) {
 
 
 // Kind of beginplay
-void initializeColours() {
+void initialize() {
 
 	for (int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
@@ -273,104 +273,22 @@ void Tick(double dt) {
 	double dtbydx = dt / dx;
 	double dx2bydt = dx * dx / dt;
 
-	// apply gravity
-//#pragma omp parallel for 
-	for (int i = 0; i <= cells - 1; ++i)
-		for (int j = 1; j <= cells - 1; ++j) {
-			/// Should I check whether the fluid is there ?
-			if (fluid[i][j] != 0.f or fluid[i][j - 1] != 0.f)
-				v[i][j] += dvG;
-			//	printf("fluid = %f\n", fluid[i][j]);
-		}
-
-	// Calculate divergence
-//#pragma omp parallel for 
-	for (int idx = 0; idx < cells * cells; ++idx) {
-		int i = idx / cells;
-		int j = idx % cells;
-		CalculateDivergence(i, j);
-		//	printf("pressure = %f\n", p[i][j]);
-	}
-
-	const double max_error = (float)1e-6;
-	const int max_iter = 80;
-	double max_delta = 0.f;
-	float old_p = 0.f;
-	int iter;
-	for (iter = 0; iter < max_iter; ++iter) {
-
-
-		// Update interior cells (Gauss-Seidel)
-		for (int i = 1; i < cells - 1; ++i) 
-			for (int j = 1; j < cells - 1; ++j) {
-
-				if (is_fluid(i, j) == 1.f) {
-					old_p = p[i][j];
-					float new_p = (p[i + 1][j] + p[i - 1][j] + p[i][j + 1] + p[i][j - 1]
-						- divergence[i][j] * dx2bydt) / 4.f;
-					p[i][j] = old_p + (1.8) * (new_p - old_p);
-					//	p[i][j] *= (float)is_fluid(i, j);
-					max_delta = fabs(p[i][j] - old_p);
-				}
-				else {
-					p[i][j] = 0.f; continue;
-				}
-				
-			}
-
-
-		if (max_delta < max_error) break;
-	}
-
-//	printf("error = %0.15f\n", max_delta);
-	printf("iter = %d\n", iter);
-
-	// Apply Neumann BCs after each full grid sweep
-	for (int j = 0; j < cells; ++j) {
-		p[0][j] = p[1][j];           // Left
-		p[cells - 1][j] = p[cells - 2][j]; // Right
-	}
-	for (int i = 0; i < cells; ++i) {
-		p[i][0] = p[i][1];           // Bottom
-		p[i][cells - 1] = p[i][cells - 2]; // Top
-	}
-
-
-	// Applying the pressure gradient
-
-	// Horizontal velocity (u)
-//#pragma omp parallel for
-	for (int i = 1; i < cells; ++i) {
-		for (int j = 0; j < cells; ++j) {
-			if (is_fluid(i, j))
-				u[i][j] -= (p[i][j] - p[i - 1][j]) * dtbydx;
-		}
-	}
-
-	// Vertical velocity (v)
-//#pragma omp parallel for
-	for (int i = 0; i < cells; ++i) {
-		for (int j = 0; j <= cells; ++j) {
-			if (is_fluid(i, j))
-				v[i][j] -= (p[i][j] - p[i][j - 1]) * dtbydx;
-		}
-	}
-
 	// velocity at solid boundaries = 0
 //#pragma omp parallel for
-	for (int i = 0; i < cells; i++) {
+/*	for (int i = 0; i < cells; i++) {
 		v[i][0] = 0.0f;  // bottiom wall
 		v[i][cells] = 0.0f; // Top wall
 		u[0][i] = 0.0f; // Left wall
 		u[cells][i] = 0.0f; // Right wall
-	}
+	}*/
+
 
 	// Advect u and v
 //#pragma omp parallel for 
 	for (int idx = 0; idx <= cells * cells; ++idx) {
 		int i = idx / cells;
 		int j = idx % cells;
-		
+
 		// --- u‐advection
 		if (i > 0 && i < cells and j > 0 and j < cells - 1) {
 
@@ -447,8 +365,11 @@ void Tick(double dt) {
 	v = newV;
 	newV = tmp1;
 
-//	delete[] tmp;
-//	delete[] tmp1;
+	//	delete[] tmp;
+	//	delete[] tmp1;
+
+
+
 
 
 	float(*temp_fluid)[cells] = new float[cells][cells];
@@ -534,14 +455,110 @@ void Tick(double dt) {
 	fluid = f;
 	delete[] temp_fluid;
 
+	// apply gravity
+//#pragma omp parallel for 
+	for (int i = 0; i <= cells - 1; ++i)
+		for (int j = 1; j <= cells - 1; ++j) {
+			/// Should I check whether the fluid is there ?
+		//	if (fluid[i][j] == 1.f and fluid[i][j - 1] == 1.f)
+				v[i][j] += dvG;
+
+			
+		}
+
+	// Calculate divergence
+//#pragma omp parallel for 
+	for (int idx = 0; idx < cells * cells; ++idx) {
+		int i = idx / cells;
+		int j = idx % cells;
+		CalculateDivergence(i, j);
+
+	//	if (fluid[i][j] != 1 and fluid[i][j] != 0)
+		//	printf("fluid = %f\n", fluid[i][j]);
+		//	printf("pressure = %f\n", p[i][j]);
+	}
+
+	const double max_error = 1e-7;
+	const int max_iter = 100;
+	double max_delta = 0.f;
+	float old_p = 0.f;
+	int iter;
+	for (iter = 0; iter < max_iter; ++iter) {
+
+
+		// Update interior cells (Gauss-Seidel)
+		for (int i = 1; i < cells - 1; ++i) 
+			for (int j = 1; j < cells - 1; ++j) {
+
+				if (fluid[i][j] == 1.f) {
+					old_p = p[i][j];
+					float new_p = (p[i + 1][j] + p[i - 1][j] + p[i][j + 1] + p[i][j - 1]
+						- divergence[i][j] * dx2bydt) / 4.f;
+					p[i][j] = old_p + (omega) * (new_p - old_p);
+					//	p[i][j] *= (float)is_fluid(i, j);
+					max_delta = fabs(p[i][j] - old_p);
+				}
+				else {
+					p[i][j] = 0.f; continue;
+				}
+				
+			}
+
+
+		if (max_delta < max_error) break;
+	}
+
+//	printf("error = %0.15f\n", max_delta);
+//	printf("iter = %d\n", iter);
+
+	// Apply Neumann BCs after each full grid sweep
+	for (int j = 0; j < cells; ++j) {
+	//	p[0][j] = p[1][j];           // Left
+
+		p[0][j] = p[1][j] + u[1][j] / dtbydx;
+	//	p[cells - 1][j] = p[cells - 2][j]; // Right
+
+		p[cells - 1][j] = p[cells - 2][j] + u[cells - 1][j] / dtbydx;
+	}
+	for (int i = 0; i < cells; ++i) {
+	//	p[i][0] = p[i][1];           // Bottom
+		p[i][0] = p[i][1] + v[i][0] / dtbydx;
+
+	//	p[i][cells - 1] = p[i][cells - 2]; // Top
+		p[i][cells - 1] = p[i][cells - 2] + v[i][cells - 1] / dtbydx;
+	}
+
+
+	// Applying the pressure gradient
+
+	// Horizontal velocity (u)
+//#pragma omp parallel for
+	for (int i = 1; i < cells; ++i) {
+		for (int j = 0; j < cells; ++j) {
+			if (fluid[i][j] or fluid[i-1][j])
+				u[i][j] -= (p[i][j] - p[i - 1][j]) * dtbydx;
+		}
+	}
+
+	// Vertical velocity (v)
+//#pragma omp parallel for
+	for (int i = 0; i < cells; ++i) {
+		for (int j = 0; j <= cells; ++j) {
+			if (fluid[i][j] or  fluid[i][j-1])
+				v[i][j] -= (p[i][j] - p[i][j - 1]) * dtbydx;
+		}
+	}
+
+
+
 	// Stability Condition work
 /*	float Umax = 0;
 	for(int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
 			if (fabs(u[a][b]) > Umax)
-				Umax = u[a][b];
+				Umax = fabs(u[a][b]);
 			if (fabs(v[a][b]) > Umax)
-				Umax = v[a][b];
+				Umax = fabs(v[a][b]);
 		}*/
 //	Umax += sqrt(5 * dx * -gravity);
 
@@ -585,6 +602,8 @@ int main()
 	glfwMakeContextCurrent(window);
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
+	// Disable VSync (immediately after window creation)
+	glfwSwapInterval(0);
 	
 
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -593,6 +612,10 @@ int main()
 		glfwTerminate();
 		return -1;
 	}
+
+	// Enable basic OpenGL optimizations
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_BACK);
 
 	const char* vertexShaderSrc =
 		"#version 330 core\n"
@@ -618,7 +641,7 @@ void main() {
     vec3 bgColor = vec3(0.0, 0.0, 0.0);
     
     // Fluid color (vibrant blue)
-    vec3 fluidColor = vec3(0.0, 0.0, 0.4);
+    vec3 fluidColor = vec3(0.0, 0.0, 1.0);
     
     // Add glow effect at higher densities
     float glow = smoothstep(0.3, 1.0, density);
@@ -762,14 +785,12 @@ void main() {
 	glBindVertexArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-	initializeColours();
+	initialize();
 
-	// Disable VSync (immediately after window creation)
-	glfwSwapInterval(0);
 
-	// Enable basic optimizations
-	glEnable(GL_CULL_FACE);
-	glCullFace(GL_BACK);
+
+
+	const double targetFrameTime = 1.0 / 30.f;  // 30 FPS = 0.033 seconds per frame
 
 	while (!glfwWindowShouldClose(window)) {
 		processInput(window);
@@ -844,6 +865,20 @@ void main() {
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
+
+		// Frame rate limiting to 30 FPS
+		
+		double frameEnd = glfwGetTime();
+		double elapsedTime = frameEnd - CurrTime;  // Time taken for this frame
+
+		if (elapsedTime < targetFrameTime) {
+			double sleepTime = targetFrameTime - elapsedTime;
+			// Busy-wait for precision (avoids including extra headers)
+			double waitEnd = frameEnd + sleepTime;
+			while (glfwGetTime() < waitEnd) {
+				// Empty loop - waits until target time is reached
+			}
+		}
 	}
 
 	glDeleteTextures(1, &texture);
