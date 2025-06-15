@@ -95,8 +95,6 @@ void initialize() {
 
 	for (int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
-			float x = -0.75f + a * stepsize;
-			float y = -0.75f + b * stepsize;
 			if (a > cells / 3 and a < 2 * cells / 3 and b > cells / 3 and b < 2 * cells / 3) {
 				fluid[a][b] = 1.f;
 			}
@@ -129,8 +127,8 @@ void CalculateDivergence(int i, int j) {
 
 		divergence[i][j] = du_dx + dv_dy;
 	}
-	else
-	divergence[i][j] = 0.f;
+//	else
+//	divergence[i][j] = 0.f;
 }
 
 void CalculatePressure(int i, int j) {
@@ -263,6 +261,37 @@ void AdvectUV(int i, int j, double dt) {
 
 void AdvectFluid(int i, int j) {
 
+}
+
+float CalculateNewPressure(int i, int j, double dx2bydt) {
+
+	int NonSolidCells = 0;
+	float new_p = 0.f;
+
+	if (i + 1 != cells - 1) {
+		p[i + 1][j] *= fluid[i + 1][j];
+		NonSolidCells++;
+		new_p += p[i + 1][j];
+	}
+	if (j + 1 != cells - 1) {
+		p[i][j + 1] *= fluid[i][j + 1];
+		NonSolidCells++;
+		new_p += p[i][j + 1];
+	}
+	if (i - 1 != 0) {
+		p[i - 1][j] *= fluid[i - 1][j];
+		NonSolidCells++;
+		new_p += p[i - 1][j];
+	}
+	if (j - 1 != 0) {
+		p[i][j - 1] *= fluid[i][j - 1];
+		NonSolidCells++;
+		new_p += p[i][j - 1];
+	}
+
+	new_p -= divergence[i][j] * dx2bydt;
+	
+	return new_p / NonSolidCells;
 }
 
 
@@ -450,6 +479,22 @@ void Tick(double dt) {
 		}
 	}
 
+	// Apply Neumann BCs after each full grid sweep
+/*	for (int j = 1; j < cells - 1; ++j) {
+			p[0][j] = p[1][j] + u[1][j] / dtbydx;
+	//	p[0][j] = p[1][j] + 50000.f;
+
+			p[cells - 1][j] = p[cells - 2][j] + u[cells - 1][j] / dtbydx;
+	//	p[cells - 1][j] = p[cells - 2][j] + 50000.f;
+	}
+	for (int i = 1; i < cells - 1; ++i) {
+			p[i][0] = p[i][1] + v[i][0] / dtbydx;
+	//	p[i][0] = p[i][1] + 50000.f;
+
+			p[i][cells - 1] = p[i][cells - 2] + v[i][cells - 1] / dtbydx;
+	//	p[i][cells - 1] = p[i][cells - 2] + 50000.f;
+	}*/
+
 	auto f = temp_fluid;
 	temp_fluid = fluid;
 	fluid = f;
@@ -486,47 +531,57 @@ void Tick(double dt) {
 	for (iter = 0; iter < max_iter; ++iter) {
 
 
-		// Update interior cells (Gauss-Seidel)
-		for (int i = 1; i < cells - 1; ++i) 
-			for (int j = 1; j < cells - 1; ++j) {
+		// Gauss Seidel Method
+		for (int i = 0; i < cells; ++i) 
+			for (int j = 0; j < cells; ++j) {
 
-				if (fluid[i][j] == 1.f) {
-					old_p = p[i][j];
-					float new_p = (p[i + 1][j] + p[i - 1][j] + p[i][j + 1] + p[i][j - 1]
-						- divergence[i][j] * dx2bydt) / 4.f;
-					p[i][j] = old_p + (omega) * (new_p - old_p);
-					//	p[i][j] *= (float)is_fluid(i, j);
-					max_delta = fabs(p[i][j] - old_p);
+				// Non Wall cells
+				if (i > 0 and j > 0 and i < cells - 1 and j < cells - 1) {
+					if (fluid[i][j] == 1.f) {
+						old_p = p[i][j];
+
+						float new_p = CalculateNewPressure(i, j, dx2bydt);
+
+						p[i][j] = old_p + (omega) * (new_p - old_p);
+						max_delta = fmin(fabs(p[i][j] - old_p), max_delta);
+					}
+					else if (fluid[i][j] == 0.f) {
+						p[i][j] = 0.f; continue;
+					}
 				}
-				else {
-					p[i][j] = 0.f; continue;
+
+				// "Wall Pressures"
+				else
+				{
+					if (i != j and i + j != cells - 1) {
+						if (i == 0) {
+							p[i][j] = p[i+1][j] - u[i+1][j] / dtbydx;
+						}
+						else if (i == cells - 1) {
+							p[i][j] = p[i-1][j] + u[i][j] / dtbydx;
+						}
+						else if (j == 0) {
+							p[i][j] = p[i][j + 1] - v[i][1] / dtbydx;
+						}
+						else if (j == cells - 1) {
+							p[i][j] = p[i][j - 1] + v[i][j] / dtbydx;
+						}
+					}
 				}
-				
 			}
 
+	
+				
+			
 
-		if (max_delta < max_error) break;
+
+		if (max_delta < max_error and iter > 8) break;
 	}
 
 //	printf("error = %0.15f\n", max_delta);
 //	printf("iter = %d\n", iter);
 
-	// Apply Neumann BCs after each full grid sweep
-	for (int j = 0; j < cells; ++j) {
-	//	p[0][j] = p[1][j];           // Left
 
-		p[0][j] = p[1][j] + u[1][j] / dtbydx;
-	//	p[cells - 1][j] = p[cells - 2][j]; // Right
-
-		p[cells - 1][j] = p[cells - 2][j] + u[cells - 1][j] / dtbydx;
-	}
-	for (int i = 0; i < cells; ++i) {
-	//	p[i][0] = p[i][1];           // Bottom
-		p[i][0] = p[i][1] + v[i][0] / dtbydx;
-
-	//	p[i][cells - 1] = p[i][cells - 2]; // Top
-		p[i][cells - 1] = p[i][cells - 2] + v[i][cells - 1] / dtbydx;
-	}
 
 
 	// Applying the pressure gradient
