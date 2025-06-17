@@ -39,7 +39,7 @@ GLuint createShaderProgram(const char* vertSrc, const char* fragSrc) {
 
 
 
-double gravity = -2.f;
+double gravity = -0.75f;
 
 double prevTime = 0.0f;
 
@@ -58,6 +58,7 @@ float(*v)[cells + 1] = new float[cells][cells + 1];
 
 float(*fluid)[cells] = new float[cells][cells];
 float divergence[cells][cells] = { 0.f };
+float vorticity[cells][cells] = { 0.f };
 float cfl = 0.5f;
 float(*newV)[cells + 1] = new float[cells][cells + 1];
 float(*newU)[cells] = new float[cells + 1][cells];
@@ -95,7 +96,7 @@ void initialize() {
 
 	for (int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
-			if (a > cells / 3 and a < 2 * cells / 3 and b > cells / 3 and b < 2 * cells / 3) {
+			if (a > cells / 6 and a < 5 * cells / 6 and b > cells / 6  and b < 5* cells /6) {
 				fluid[a][b] = 1.f;
 			}
 			else
@@ -119,16 +120,28 @@ void initialize() {
 
 void CalculateDivergence(int i, int j) {
 	if (fluid[i][j] != 0.f) {
+	if (i == 0 or i == cells - 1 or j == 0 or j == cells - 1) {
+
+	}
 		
-		
-			float du_dx = (u[i + 1][j] - u[i][j]) / dx;
-		
-			float dv_dy = (v[i][j + 1] - v[i][j]) / dx;
+	else if (i == 1 or i == cells - 2 or j == 1 or j == cells - 2) {
+		float du_dx = (u[i + 1][j] * (i+1 == cells-1? 0.f : 1.f) - u[i][j] * (i == 1? 0.f : 1.f));
+
+		float dv_dy = (v[i][j + 1] * (j + 1 == cells - 1 ? 0.f : 1.f) - v[i][j] * (j == 1 ? 0.f : 1.f));
 
 		divergence[i][j] = du_dx + dv_dy;
 	}
-//	else
-//	divergence[i][j] = 0.f;
+
+	else {
+		float du_dx = (u[i + 1][j]- u[i][j]);
+		float dv_dy = (v[i][j + 1]- v[i][j]);
+		divergence[i][j] = du_dx + dv_dy;
+	}
+
+
+	}
+	else
+	divergence[i][j] = 0.f;
 }
 
 void CalculatePressure(int i, int j) {
@@ -263,7 +276,7 @@ void AdvectFluid(int i, int j) {
 
 }
 
-float CalculateNewPressure(int i, int j, double dx2bydt) {
+float CalculateNewPressure(int i, int j, double dxbydt) {
 
 	int NonSolidCells = 0;
 	float new_p = 0.f;
@@ -289,7 +302,7 @@ float CalculateNewPressure(int i, int j, double dx2bydt) {
 		new_p += p[i][j - 1];
 	}
 
-	new_p -= divergence[i][j] * dx2bydt;
+	new_p -= divergence[i][j] * dxbydt;
 	
 	return new_p / NonSolidCells;
 }
@@ -300,7 +313,7 @@ void Tick(double dt) {
 
 	double dvG = gravity * dt;
 	double dtbydx = dt / dx;
-	double dx2bydt = dx * dx / dt;
+//	double dxbydt = dx / dt;
 
 	// velocity at solid boundaries = 0
 //#pragma omp parallel for
@@ -511,6 +524,52 @@ void Tick(double dt) {
 			
 		}
 
+
+	float(*fx)[cells] = new float[cells][cells];
+	float(*fy)[cells] = new float[cells][cells];
+
+	// VORTICITY CONFINEMENT
+	for(int i = 0; i < cells; i++)
+		for (int j = 0; j < cells; j++) {
+			if (i != 0 and j != 0 and i != cells - 1 and j != cells - 1)
+			vorticity[i][j] = fabs(
+					((v[i + 1][j] + v[i + 1][j + 1]) / 2.f - (v[i - 1][j] + v[i - 1][j + 1]) / 2.f)
+				  - ((u[i][j + 1] + u[i + 1][j + 1]) / 2.f - (u[i][j - 1] + u[i + 1][j + 1]) / 2.f) / (2 * dx));
+
+			fx[i][j] = 0.f;
+			fy[i][j] = 0.f;
+		}
+
+
+
+	for (int i = 1; i < cells - 1; i++)
+		for (int j = 1; j < cells - 1; j++) {
+			float grad_x = (vorticity[i + 1][j] - vorticity[i - 1][j]) / (2 * dx);
+			float grad_y = (vorticity[i][j + 1] - vorticity[i][j - 1]) / (2 * dx);
+			
+			float vecLen = sqrt(grad_x * grad_x + grad_y * grad_y);
+			if (vecLen != 0.f) {
+				grad_x /= vecLen;
+				grad_y /= vecLen;
+
+				float epsilon = 1.f;
+				fx[i][j] = epsilon * dx * (grad_y * vorticity[i][j]);
+				fy[i][j] = epsilon * dx * (-grad_x * vorticity[i][j]);
+
+				if (i != 1) {
+					u[i][j] += (fx[i][j] + fx[i - 1][j]) / 2 * dt;
+				}
+				if (j != 1) {
+					v[i][j] += (fy[i][j] + fy[i][j - 1]) / 2 * dt;
+				}
+			}
+		}
+
+	delete[] fx;
+	delete[] fy;
+
+
+
 	// Calculate divergence
 //#pragma omp parallel for 
 	for (int idx = 0; idx < cells * cells; ++idx) {
@@ -540,9 +599,9 @@ void Tick(double dt) {
 					if (fluid[i][j] == 1.f) {
 						old_p = p[i][j];
 
-						float new_p = CalculateNewPressure(i, j, dx2bydt);
+						float new_p = CalculateNewPressure(i, j, 1/dtbydx);
 
-						p[i][j] = old_p + (omega) * (new_p - old_p);
+						p[i][j] = old_p + (1.85) * (new_p - old_p);
 						max_delta = fmin(fabs(p[i][j] - old_p), max_delta);
 					}
 					else if (fluid[i][j] == 0.f) {
@@ -589,7 +648,7 @@ void Tick(double dt) {
 	// Horizontal velocity (u)
 //#pragma omp parallel for
 	for (int i = 1; i < cells; ++i) {
-		for (int j = 0; j < cells; ++j) {
+		for (int j = 1; j < cells - 1; ++j) {
 			if (fluid[i][j] or fluid[i-1][j])
 				u[i][j] -= (p[i][j] - p[i - 1][j]) * dtbydx;
 		}
@@ -598,8 +657,8 @@ void Tick(double dt) {
 	// Vertical velocity (v)
 //#pragma omp parallel for
 	for (int i = 0; i < cells; ++i) {
-		for (int j = 0; j <= cells; ++j) {
-			if (fluid[i][j] or  fluid[i][j-1])
+		for (int j = 1; j < cells; ++j) {
+		//	if (fluid[i][j] or  fluid[i][j-1])
 				v[i][j] -= (p[i][j] - p[i][j - 1]) * dtbydx;
 		}
 	}
@@ -772,15 +831,23 @@ void main() {
 	// Create divergence shader program
 	const char* divergenceFragShaderSrc = R"(
 	#version 330 core
-	in vec2 texCoord;
-	out vec4 fragColor;
-	uniform sampler2D tex;
-	uniform float maxValue;
+in vec2 texCoord;
+out vec4 fragColor;
+uniform sampler2D divergenceTexture;
 
-	void main() {
-		float val = texture(tex, texCoord).r / maxValue;
-		fragColor = vec4(val > 0.0 ? vec3(val, 0, 0) : vec3(0, 0, -val), 1.0);
-	}
+void main() {
+    // Sample raw divergence value
+    float div = texture(divergenceTexture, texCoord).r;
+    
+    // Clamp and visualize
+    if (div > 0.0) {
+        // Positive divergence (red)
+        fragColor = vec4(clamp(div, 0.0, 1.0), 0.0, 0.0, 1.0);
+    } else {
+        // Negative divergence (blue)
+        fragColor = vec4(0.0, 0.0, clamp(-div, 0.0, 1.0), 1.0);
+    }
+}
 	)";
 
 	divergenceProgram = createShaderProgram(vertexShaderSrc, divergenceFragShaderSrc);
@@ -845,7 +912,7 @@ void main() {
 
 
 
-	const double targetFrameTime = 1.0 / 30.f;  // 30 FPS = 0.033 seconds per frame
+	const double targetFrameTime = 1.0 / 100.f;  // 30 FPS = 0.033 seconds per frame
 
 	while (!glfwWindowShouldClose(window)) {
 		processInput(window);
