@@ -39,11 +39,13 @@ GLuint createShaderProgram(const char* vertSrc, const char* fragSrc) {
 
 
 
-double gravity = -0.8f;
+double gravity = -0.4f;
 
 double prevTime = 0.0f;
 
 const float omega = 1.9f;
+
+const double targetFrameTime = 1.0 / 100.f;  // 30 FPS = 0.033 seconds per frame
 
 // Just to center the fluid
 float screensize = 1.5f;
@@ -96,7 +98,7 @@ void initialize() {
 
 	for (int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
-			if (a > cells / 6 and a < 5 * cells / 6 and b > cells / 6  and b < 5* cells /6) {
+			if (a > cells / 3 and a < 2 * cells / 3 and b > cells / 3  and b < 2* cells /3) {
 				fluid[a][b] = 1.f;
 			}
 			else
@@ -137,8 +139,6 @@ void CalculateDivergence(int i, int j) {
 		float dv_dy = (v[i][j + 1]- v[i][j]);
 		divergence[i][j] = du_dx + dv_dy;
 	}
-
-
 	}
 else
 divergence[i][j] = 0.f;
@@ -307,6 +307,37 @@ float CalculateNewPressure(int i, int j, double dxbydt) {
 	return new_p / NonSolidCells;
 }
 
+float samplevelocity(float px, float py, char vel) {
+
+	// Clamp and interpolate
+	px = clamp(px, 1.f, cells - 1.f); // Avoid sampling boundaries
+	py = clamp(py, 1.f, cells - 1.f);
+
+	int i0 = clamp((int)px, 1, cells - 1);
+	int j0 = clamp((int)py, 1, cells - 1);
+	int i1 = i0 + 1 > cells - 1 ? cells - 1 : i0 + 1;
+	int j1 = j0 + 1 > cells - 1 ? cells - 1 : j0 + 1;
+	int im1 = (i0 - 1) < 1 ? 1 : i0 - 1;
+	int jm1 = (j0 - 1) < 1 ? 1 : j0 - 1;
+
+	float a = px - i0;
+	float b = py - j0;
+
+	if (vel == 'u') {
+		return (1 - a) * (1 - b) * (u[i0][j0] + u[i0][jm1]) / 2 +
+			(1 - a) * b * (u[i0][j1] + u[i0][j0]) / 2 +
+			a * (1 - b) * (u[i1][j0] + u[i1][jm1]) / 2 +
+			a * b * (u[i1][j1] + u[i1][j0]) / 2;
+	}
+
+	else if (vel == 'v') {
+		return (1 - a) * (1 - b) * (v[i0][j0] + v[im1][j0]) / 2 +
+			(1 - a) * b * (v[i0][j1] + v[im1][j1]) / 2 +
+			a * (1 - b) * (v[i0][j0] + v[im1][j0]) / 2 +
+			a * b * (v[im1][jm1] + v[i0][jm1]) / 2;
+	}
+}
+
 
 
 void Tick(double dt) {
@@ -332,10 +363,10 @@ void Tick(double dt) {
 		int j = idx % cells;
 
 		// --- u‐advection
-		if (i > 0 && i < cells and j > 0 and j < cells - 1) {
+		if (i > 1 && i < cells - 1 and j > 0 and j < cells - 1) {
 
 			///  why fluid[i-1][j] != 0 ?
-			if (fluid[i][j] != 0.f and fluid[i - 1][j] != 0.f) {
+		//	if (fluid[i][j] != 0.f or fluid[i - 1][j] != 0.f) {
 				float x = i;
 				float y = j + 0.5f;
 
@@ -346,29 +377,14 @@ void Tick(double dt) {
 				// Trace back
 				float px = x - vx * dtbydx;
 				float py = y - vy * dtbydx;
-
-				// Clamp and interpolate
-				px = clamp(px, 1.f, cells - 1.f); // Avoid sampling boundaries
-				py = clamp(py, 1.f, cells - 1.f);
-
-				// Bi-linear Interpolation Code:
-				float a = px - (int)px;
-				float b = py - (int)py;
-				int x0 = (int)px;
-				int y0 = (int)py;
-
-				float val = (1 - a) * (1 - b) * u[x0][y0] +
-					(1 - a) * b * u[x0][y0 + 1] +
-					a * (1 - b) * u[x0 + 1][y0] +
-					a * b * u[x0 + 1][y0 + 1];
-
-				newU[i][j] = val;
-			}
+						
+				newU[i][j] = samplevelocity(px, py, 'u');
+		//	}
 		}
 
 		// --- v‐advection
-		if (j > 0 and j < cells and i > 0 and i < cells - 1) {
-			if (fluid[i][j] != 0.f and fluid[i][j - 1] != 0.f) {
+		if (j > 1 and j < cells - 1 and i > 0 and i < cells - 1) {
+		//	if (fluid[i][j] != 0.f or fluid[i][j - 1] != 0.f) {
 				float x = i + 0.5f;
 				float y = j;
 
@@ -380,22 +396,8 @@ void Tick(double dt) {
 				float px = x - vx * dtbydx;
 				float py = y - vy * dtbydx;
 
-				// Clamp and interpolate
-				px = clamp(px, 1.f, cells - 1.f);
-				py = clamp(py, 1.f, cells - 1.f); // Avoid sampling boundaries
-
-				// Bi-linear Interpolation Code:
-				float a = px - (int)px;
-				float b = py - (int)py;
-				int x0 = (int)px;
-				int y0 = (int)py;
-
-
-				newV[i][j] = (1 - a) * (1 - b) * v[x0][y0] +
-					(1 - a) * b * v[x0][y0 + 1] +
-					a * (1 - b) * v[x0 + 1][y0] +
-					a * b * v[x0 + 1][y0 + 1];
-			}
+				newV[i][j] = samplevelocity(px, py, 'v');
+		//	}
 		}
 	}
 
@@ -441,46 +443,36 @@ void Tick(double dt) {
 			float prevY = y - vy * dt_dx;*/
 
 
-			// RK2
-			// Current velocity at starting point
-			float vx0 = (u[i][j] + u[i + 1][j]) * 0.5f;
-			float vy0 = (v[i][j] + v[i][j + 1]) * 0.5f;
+			// RK4
+			// Stage 1 : Velocity at starting point (x, y)
+			float k1x = (u[i][j] + u[i + 1][j]) * 0.5f;
+			float k1y = (v[i][j] + v[i][j + 1]) * 0.5f;
 
-			// Half-step position (midpoint)
-			float midX = x - 0.5f * dtbydx * vx0;
-			float midY = y - 0.5f * dtbydx * vy0;
+			// Stage 2: Velocity at first midpoint (t - dt/2)
+			float x2 = x - 0.5f * dtbydx * k1x;
+			float y2 = y - 0.5f * dtbydx * k1y;
+			float k2x = samplevelocity(x2, y2, 'u');
+			float k2y = samplevelocity(x2, y2, 'v');
 
-			// Clamp midpoint to grid boundaries
-			midX = clamp(midX, 1.f, cells - 1);
-			midY = clamp(midY, 1.f, cells - 1);;
+			// Stage 3: Velocity at second midpoint (t - dt/2)
+			float x3 = x - 0.5f * dtbydx * k2x;
+			float y3 = y - 0.5f * dtbydx * k2y;
+			float k3x = samplevelocity(x3, y3, 'u');
+			float k3y = samplevelocity(x3, y3, 'v');
 
-			// Calculate velocity at midpoint
-			int mi0 = (int)midX;
-			int mj0 = (int)midY;
-			int mi1 = mi0 + 1;
-			int mj1 = mj0 + 1;
+			// Stage 4: Velocity at endpoint (t - dt)
+			float x4 = x - dtbydx * k3x;
+			float y4 = y - dtbydx * k3y;
+			float k4x = samplevelocity(x4, y4, 'u');
+			float k4y = samplevelocity(x4, y4, 'v');
 
-			// Safeguard against boundary overflows
-			mi1 = (mi1 >= cells) ? cells - 1 : mi1;
-			mj1 = (mj1 >= cells) ? cells - 1 : mj1;
+			// Combine velocities with RK4 weights
+			float vx = (k1x + 2 * k2x + 2 * k3x + k4x) / 6.0f;
+			float vy = (k1y + 2 * k2y + 2 * k3y + k4y) / 6.0f;
 
-			// Bilinear interpolation for velocity at midpoint
-			float s = midX - mi0;
-			float t = midY - mj0;
-
-			float vxMid = (1 - s) * (1 - t) * u[mi0][mj0]
-				+ s * (1 - t) * u[mi1][mj0]
-				+ (1 - s) * t * u[mi0][mj1]
-				+ s * t * u[mi1][mj1];
-
-			float vyMid = (1 - s) * (1 - t) * v[mi0][mj0]
-				+ s * (1 - t) * v[mi1][mj0]
-				+ (1 - s) * t * v[mi0][mj1]
-				+ s * t * v[mi1][mj1];
-
-			// Full step using midpoint velocity
-			float prevX = x - dtbydx * vxMid;
-			float prevY = y - dtbydx * vyMid;
+			// Trace back full step using combined velocity
+			float prevX = x - dtbydx * vx;
+			float prevY = y - dtbydx * vy;
 
 			prevX = clamp(prevX, 1.f, cells - 1); // Clamping the prevx between 0 and cells - 1
 			prevY = clamp(prevY, 1.f, cells - 1);
@@ -491,22 +483,6 @@ void Tick(double dt) {
 			temp_fluid[i][j] = fluid[pi][pj];
 		}
 	}
-
-	// Apply Neumann BCs after each full grid sweep
-/*	for (int j = 1; j < cells - 1; ++j) {
-			p[0][j] = p[1][j] + u[1][j] / dtbydx;
-	//	p[0][j] = p[1][j] + 50000.f;
-
-			p[cells - 1][j] = p[cells - 2][j] + u[cells - 1][j] / dtbydx;
-	//	p[cells - 1][j] = p[cells - 2][j] + 50000.f;
-	}
-	for (int i = 1; i < cells - 1; ++i) {
-			p[i][0] = p[i][1] + v[i][0] / dtbydx;
-	//	p[i][0] = p[i][1] + 50000.f;
-
-			p[i][cells - 1] = p[i][cells - 2] + v[i][cells - 1] / dtbydx;
-	//	p[i][cells - 1] = p[i][cells - 2] + 50000.f;
-	}*/
 
 	auto f = temp_fluid;
 	temp_fluid = fluid;
@@ -582,7 +558,7 @@ void Tick(double dt) {
 		//	printf("pressure = %f\n", p[i][j]);
 	}
 
-	const double max_error = 1e-8;
+	const double max_error = 1e-6;
 	const int max_iter = 100;
 	double max_delta = 0.f;
 	float old_p = 0.f;
@@ -909,10 +885,6 @@ void main() {
 
 	initialize();
 
-
-
-
-	const double targetFrameTime = 1.0 / 60.f;  // 30 FPS = 0.033 seconds per frame
 
 	while (!glfwWindowShouldClose(window)) {
 		processInput(window);
