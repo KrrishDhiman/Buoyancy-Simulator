@@ -39,13 +39,13 @@ GLuint createShaderProgram(const char* vertSrc, const char* fragSrc) {
 
 
 
-double gravity = -0.4f;
+double gravity = -0.05f;
 
 double prevTime = 0.0f;
 
 const float omega = 1.9f;
 
-const double targetFrameTime = 1.0 / 100.f;  // 30 FPS = 0.033 seconds per frame
+const double targetFrameTime = 1.0 / 60.f;  // 30 FPS = 0.033 seconds per frame
 
 // Just to center the fluid
 float screensize = 1.5f;
@@ -370,15 +370,37 @@ void Tick(double dt) {
 				float x = i;
 				float y = j + 0.5f;
 
-				// Velocity at u's location
-				float vx = u[i][j];
-				float vy = 0.25f * (v[i][j] + v[i - 1][j] + v[i][j + 1] + v[i - 1][j + 1]); // Average v at u's location
+				// Stage 1: Velocity at starting point (x, y)
+				float k1x = u[i][j];
+				float k1y = 0.25f * (v[i][j] + v[i - 1][j] + v[i][j + 1] + v[i - 1][j + 1]); // Average v at u's location
 
-				// Trace back
-				float px = x - vx * dtbydx;
-				float py = y - vy * dtbydx;
+				// Stage 2: Velocity at first midpoint (t - dt/2)
+				float x2 = x - 0.5 * k1x * dtbydx;
+				float y2 = y - 0.5 * k1y * dtbydx;
+				float k2x = samplevelocity(x2, y2, 'u');
+				float k2y = samplevelocity(x2, y2, 'v');
+
+				// Stage 3: Velocity at second midpoint (t - dt/2)
+				float x3 = x - 0.5f * dtbydx * k2x;
+				float y3 = y - 0.5f * dtbydx * k2y;
+				float k3x = samplevelocity(x3, y3, 'u');
+				float k3y = samplevelocity(x3, y3, 'v');
+
+				// Stage 4: Velocity at endpoint (t - dt)
+				float x4 = x - dtbydx * k3x;
+				float y4 = y - dtbydx * k3y;
+				float k4x = samplevelocity(x4, y4, 'u');
+				float k4y = samplevelocity(x4, y4, 'v');
+
+				// Combine velocities with RK4 weights
+				float vx = (k1x + 2 * k2x + 2 * k3x + k4x) / 6.0f;
+				float vy = (k1y + 2 * k2y + 2 * k3y + k4y) / 6.0f;
+
+				// Trace back full step using combined velocity
+				float prevX = x - dtbydx * vx;
+				float prevY = y - dtbydx * vy;
 						
-				newU[i][j] = samplevelocity(px, py, 'u');
+				newU[i][j] = samplevelocity(prevX, prevY, 'u');
 		//	}
 		}
 
@@ -388,15 +410,36 @@ void Tick(double dt) {
 				float x = i + 0.5f;
 				float y = j;
 
+				// Stage 1
+				float k1x = 0.25f * (u[i][j] + u[i + 1][j] + u[i][j - 1] + u[i + 1][j - 1]); // Average u at v's location
+				float k1y = v[i][j];
 
-				float vx = 0.25f * (u[i][j] + u[i + 1][j] + u[i][j - 1] + u[i + 1][j - 1]); // Average u at v's location
-				float vy = v[i][j];
+				// Stage 2: Velocity at first midpoint (t - dt/2)
+				float x2 = x - 0.5 * k1x * dtbydx;
+				float y2 = y - 0.5 * k1y * dtbydx;
+				float k2x = samplevelocity(x2, y2, 'u');
+				float k2y = samplevelocity(x2, y2, 'v');
 
-				// Trace back
-				float px = x - vx * dtbydx;
-				float py = y - vy * dtbydx;
+				// Stage 3: Velocity at second midpoint (t - dt/2)
+				float x3 = x - 0.5f * dtbydx * k2x;
+				float y3 = y - 0.5f * dtbydx * k2y;
+				float k3x = samplevelocity(x3, y3, 'u');
+				float k3y = samplevelocity(x3, y3, 'v');
 
-				newV[i][j] = samplevelocity(px, py, 'v');
+				// Stage 4: Velocity at endpoint (t - dt)
+				float x4 = x - dtbydx * k3x;
+				float y4 = y - dtbydx * k3y;
+				float k4x = samplevelocity(x4, y4, 'u');
+				float k4y = samplevelocity(x4, y4, 'v');
+
+				// Combine velocities with RK4 weights
+				float vx = (k1x + 2 * k2x + 2 * k3x + k4x) / 6.0f;
+				float vy = (k1y + 2 * k2y + 2 * k3y + k4y) / 6.0f;
+
+				// Trace back full step using combined velocity
+				float prevX = x - dtbydx * vx;
+				float prevY = y - dtbydx * vy;
+				newV[i][j] = samplevelocity(prevX, prevY, 'v');
 		//	}
 		}
 	}
