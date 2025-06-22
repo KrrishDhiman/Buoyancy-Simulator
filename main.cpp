@@ -39,11 +39,11 @@ GLuint createShaderProgram(const char* vertSrc, const char* fragSrc) {
 
 
 
-double gravity = -0.75f;
+double gravity = -0.8f;
 
 double prevTime = 0.0f;
 
-const float omega = 1.8f;
+const float omega = 1.9f;
 
 // Just to center the fluid
 float screensize = 1.5f;
@@ -87,7 +87,7 @@ const float inv_dx = 1.0f / dx;
 //const float G_incrementalV = gravity * dt;
 
 bool is_fluid(int i, int j) {
-	return fluid[i][j] > 0.5f; // Assuming 1=fluid, 0=air
+	return fluid[i][j] == 1.f; // Assuming 1=fluid, 0=air
 }
 
 
@@ -121,11 +121,11 @@ void initialize() {
 void CalculateDivergence(int i, int j) {
 	if (fluid[i][j] != 0.f) {
 	if (i == 0 or i == cells - 1 or j == 0 or j == cells - 1) {
-
+	
 	}
 		
 	else if (i == 1 or i == cells - 2 or j == 1 or j == cells - 2) {
-		float du_dx = (u[i + 1][j] * (i+1 == cells-1? 0.f : 1.f) - u[i][j] * (i == 1? 0.f : 1.f));
+		float du_dx = (u[i + 1][j] * (i + 1 == cells - 1 ? 0.f : 1.f) - u[i][j] * (i == 1 ? 0.f : 1.f));
 
 		float dv_dy = (v[i][j + 1] * (j + 1 == cells - 1 ? 0.f : 1.f) - v[i][j] * (j == 1 ? 0.f : 1.f));
 
@@ -140,8 +140,8 @@ void CalculateDivergence(int i, int j) {
 
 
 	}
-	else
-	divergence[i][j] = 0.f;
+else
+divergence[i][j] = 0.f;
 }
 
 void CalculatePressure(int i, int j) {
@@ -282,22 +282,22 @@ float CalculateNewPressure(int i, int j, double dxbydt) {
 	float new_p = 0.f;
 
 	if (i + 1 != cells - 1) {
-		p[i + 1][j] *= fluid[i + 1][j];
+	//	p[i + 1][j] *= fluid[i + 1][j];
 		NonSolidCells++;
 		new_p += p[i + 1][j];
 	}
 	if (j + 1 != cells - 1) {
-		p[i][j + 1] *= fluid[i][j + 1];
+	//	p[i][j + 1] *= fluid[i][j + 1];
 		NonSolidCells++;
 		new_p += p[i][j + 1];
 	}
 	if (i - 1 != 0) {
-		p[i - 1][j] *= fluid[i - 1][j];
+	//	p[i - 1][j] *= fluid[i - 1][j];
 		NonSolidCells++;
 		new_p += p[i - 1][j];
 	}
 	if (j - 1 != 0) {
-		p[i][j - 1] *= fluid[i][j - 1];
+	//	p[i][j - 1] *= fluid[i][j - 1];
 		NonSolidCells++;
 		new_p += p[i][j - 1];
 	}
@@ -582,7 +582,7 @@ void Tick(double dt) {
 		//	printf("pressure = %f\n", p[i][j]);
 	}
 
-	const double max_error = 1e-7;
+	const double max_error = 1e-8;
 	const int max_iter = 100;
 	double max_delta = 0.f;
 	float old_p = 0.f;
@@ -601,8 +601,8 @@ void Tick(double dt) {
 
 						float new_p = CalculateNewPressure(i, j, 1/dtbydx);
 
-						p[i][j] = old_p + (1.85) * (new_p - old_p);
-						max_delta = fmin(fabs(p[i][j] - old_p), max_delta);
+						p[i][j] = old_p + (1.9) * (new_p - old_p);
+						max_delta = fmax(fabs(p[i][j] - old_p), max_delta);
 					}
 					else if (fluid[i][j] == 0.f) {
 						p[i][j] = 0.f; continue;
@@ -666,18 +666,18 @@ void Tick(double dt) {
 
 
 	// Stability Condition work
-/*	float Umax = 0;
+	float Umax = 0;
 	for(int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
 			if (fabs(u[a][b]) > Umax)
 				Umax = fabs(u[a][b]);
 			if (fabs(v[a][b]) > Umax)
 				Umax = fabs(v[a][b]);
-		}*/
-//	Umax += sqrt(5 * dx * -gravity);
+		}
+	Umax += sqrt(5 * dx * -gravity);
 
 
-//	printf("const = %f\n", Umax * dt / dx);
+	printf("const = %f\n", Umax * dt / dx);
 
 }
 
@@ -912,7 +912,7 @@ void main() {
 
 
 
-	const double targetFrameTime = 1.0 / 100.f;  // 30 FPS = 0.033 seconds per frame
+	const double targetFrameTime = 1.0 / 60.f;  // 30 FPS = 0.033 seconds per frame
 
 	while (!glfwWindowShouldClose(window)) {
 		processInput(window);
