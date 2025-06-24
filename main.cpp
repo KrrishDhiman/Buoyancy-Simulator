@@ -47,58 +47,47 @@ const float omega = 1.9f;
 
 const double targetFrameTime = 1.0 / 60.f;  // 30 FPS = 0.033 seconds per frame
 
-// Just to center the fluid
-float screensize = 1.5f;
-
-const int cells = 256;
-const float stepsize = 1.5f / cells;
+const int cells = 32;
+const double dx = 2.f / cells;
 //float center = cells * stepsize / 2 - 0.75f;
-float p[cells][cells] = { 0.f };
-float(*u)[cells] = new float[cells + 1][cells];
+double p[cells][cells] = { 0.0 };
+double r[cells][cells] = { 0.0 };
+double(*u)[cells] = new double[cells + 1][cells];
 
-float(*v)[cells + 1] = new float[cells][cells + 1];
+double(*v)[cells + 1] = new double[cells][cells + 1];
 
 float(*fluid)[cells] = new float[cells][cells];
-float divergence[cells][cells] = { 0.f };
-float vorticity[cells][cells] = { 0.f };
-float cfl = 0.5f;
-float(*newV)[cells + 1] = new float[cells][cells + 1];
-float(*newU)[cells] = new float[cells + 1][cells];
+double divergence[cells][cells] = { 0.0 };
+double vorticity[cells][cells] = { 0.0 };
+double(*newV)[cells + 1] = new double[cells][cells + 1];
+double(*newU)[cells] = new double[cells + 1][cells];
 
+double precon[cells][cells] = { 0.0 };
+double z[cells][cells] = { 0.0 };
+double s[cells][cells] = { 0.0 };
+double q[cells][cells] = { 0.0 };
 
-// grid spacing (same as your stepsize)
-const float dx = stepsize;
-// time step
-//float dt;	//cfl * dx / UMax;
-//float dt = 0.001;
-
-
-
-float PrevTime = 0.f;
+double PrevTime = 0.f;
 
 // v^2 = 0^2 + 2(-g)(-S) where S = - 2cells*dx/3
-float UMax = pow(2 * fabs(gravity) * 2.f * (screensize) / 3.f, 0.5f);
+//float UMax = pow(2 * fabs(gravity) * 2.f * (screensize) / 3.f, 0.5f);
 
 /// SOME CALCULATIONS: UMax approx 54.7, so calculating dx at dt = 0.001, apparently dx approx 1!
 /// tried g = 1000, UMax 44.7, so with dt = 0.001, dx ~ 0.8
 /// SO dt =  is required... 
 
-// For faster times, precomputed data
-const float inv_dx = 1.0f / dx;
-//const float dt_dx = dt * inv_dx;
-//const float G_incrementalV = gravity * dt;
-
 bool is_fluid(int i, int j) {
 	return fluid[i][j] == 1.f; // Assuming 1=fluid, 0=air
 }
 
+void mic0();
 
 // Kind of beginplay
 void initialize() {
 
 	for (int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
-			if (a > cells / 3 and a < 2 * cells / 3 and b > cells / 3  and b < 2* cells /3) {
+			if (a > cells / 3 and a < 2 * cells / 3 and b > cells / 3 and b < 2 * cells / 3) {
 				fluid[a][b] = 1.f;
 			}
 			else
@@ -118,50 +107,32 @@ void initialize() {
 				newU[a][b] = 0.f;
 			}
 		}
+
+	mic0();
 }
 
 void CalculateDivergence(int i, int j) {
-	if (fluid[i][j] != 0.f) {
-	if (i == 0 or i == cells - 1 or j == 0 or j == cells - 1) {
-	
-	}
-		
-	else if (i == 1 or i == cells - 2 or j == 1 or j == cells - 2) {
-		float du_dx = (u[i + 1][j] * (i + 1 == cells - 1 ? 0.f : 1.f) - u[i][j] * (i == 1 ? 0.f : 1.f));
+	if (fluid[i][j] == 1.0) {
+		if (i == 0 or i == cells - 1 or j == 0 or j == cells - 1) {
 
-		float dv_dy = (v[i][j + 1] * (j + 1 == cells - 1 ? 0.f : 1.f) - v[i][j] * (j == 1 ? 0.f : 1.f));
+		}
 
-		divergence[i][j] = du_dx + dv_dy;
-	}
+		else if (i == 1 or i == cells - 2 or j == 1 or j == cells - 2) {
+			double du_dx = (u[i + 1][j] * (i + 1 == cells - 1 ? 0.0 : 1.0) - u[i][j] * (i == 1 ? 0.0 : 1.0));
 
-	else {
-		float du_dx = (u[i + 1][j]- u[i][j]);
-		float dv_dy = (v[i][j + 1]- v[i][j]);
-		divergence[i][j] = du_dx + dv_dy;
-	}
-	}
-else
-divergence[i][j] = 0.f;
-}
+			double dv_dy = (v[i][j + 1] * (j + 1 == cells - 1 ? 0.0 : 1.0) - v[i][j] * (j == 1 ? 0.0 : 1.0));
 
-void CalculatePressure(int i, int j) {
-	// Using Poisson Equation, del^2(P) = del(u*)/dt
-	float max_error = 0.001f;
-	float LastPressure;
-	if (fabs(i - j) + fabs(i + j - cells + 1) < cells - 1) {
-		for (int iter = 0; iter < 10; iter++) {
-			p[i][j] = (p[i + 1][j]
-				+ p[i - 1][j]
-				+ p[i][j + 1]
-				+ p[i][j - 1]
-				- divergence[i][j] * dx * dx /* dt*/) / 4.0;
-			LastPressure = p[i][j];
-			if (fabs(LastPressure - p[i][j]) <= max_error) break;
+			divergence[i][j] = du_dx + dv_dy;
+		}
+
+		else {
+			double du_dx = (u[i + 1][j] - u[i][j]);
+			double dv_dy = (v[i][j + 1] - v[i][j]);
+			divergence[i][j] = du_dx + dv_dy;
 		}
 	}
-
-	// Apply Neumann boundary conditions (e.g., dp/dn = 0)
-
+	else
+		divergence[i][j] = 0.0;
 }
 
 void ForceIncompressibility(int i, int j) {
@@ -248,66 +219,39 @@ void ForceIncompressibility(int i, int j) {
 	}
 }
 
-void BoundaryConditions(int i) {
 
-	// Apply boundary conditions for all walls
-		// Left Wall (i=0)
-	u[0][i] = 0.0f;       // Normal velocity: no-penetration
-	v[0][i] = v[1][i];   // No-slip for tangential velocity (v)
-
-	// Right Wall (i=cells)
-	u[cells - 1][i] = 0.0f;           // Normal velocity
-	v[cells - 1][i] = v[cells - 2][i]; // No-slip for v
-
-	// Bottom Wall (j=0)
-	v[i][0] = 0.0f;       // Normal velocity
-	u[i][0] = -u[i][1];   // No-slip for u
-
-	// Top Wall (j=cells)
-	v[i][cells - 1] = 0.0f;           // Normal velocity
-	u[i][cells - 1] = -u[i][cells - 2]; // No-slip for u
-}
-
-void AdvectUV(int i, int j, double dt) {
-	
-}
-
-void AdvectFluid(int i, int j) {
-
-}
-
-float CalculateNewPressure(int i, int j, double dxbydt) {
+double CalculateNewPressure(int i, int j, double dxbydt) {
 
 	int NonSolidCells = 0;
-	float new_p = 0.f;
+	double new_p = 0.0;
 
 	if (i + 1 != cells - 1) {
-	//	p[i + 1][j] *= fluid[i + 1][j];
+		//	p[i + 1][j] *= fluid[i + 1][j];
 		NonSolidCells++;
 		new_p += p[i + 1][j];
 	}
 	if (j + 1 != cells - 1) {
-	//	p[i][j + 1] *= fluid[i][j + 1];
+		//	p[i][j + 1] *= fluid[i][j + 1];
 		NonSolidCells++;
 		new_p += p[i][j + 1];
 	}
 	if (i - 1 != 0) {
-	//	p[i - 1][j] *= fluid[i - 1][j];
+		//	p[i - 1][j] *= fluid[i - 1][j];
 		NonSolidCells++;
 		new_p += p[i - 1][j];
 	}
 	if (j - 1 != 0) {
-	//	p[i][j - 1] *= fluid[i][j - 1];
+		//	p[i][j - 1] *= fluid[i][j - 1];
 		NonSolidCells++;
 		new_p += p[i][j - 1];
 	}
 
 	new_p -= divergence[i][j] * dxbydt;
-	
+
 	return new_p / NonSolidCells;
 }
 
-float samplevelocity(float px, float py, char vel) {
+double samplevelocity(double px, double py, char vel) {
 
 	// Clamp and interpolate
 	px = clamp(px, 1.f, cells - 1.f); // Avoid sampling boundaries
@@ -320,8 +264,8 @@ float samplevelocity(float px, float py, char vel) {
 	int im1 = (i0 - 1) < 1 ? 1 : i0 - 1;
 	int jm1 = (j0 - 1) < 1 ? 1 : j0 - 1;
 
-	float a = px - i0;
-	float b = py - j0;
+	double a = px - i0;
+	double b = py - j0;
 
 	if (vel == 'u') {
 		return (1 - a) * (1 - b) * (u[i0][j0] + u[i0][jm1]) / 2 +
@@ -338,26 +282,119 @@ float samplevelocity(float px, float py, char vel) {
 	}
 }
 
+int Adiag(int i, int j) {
+	if (i > 1 and i < cells - 2 and j > 1 and j < cells - 2) {
+		return 4;
+	}
+	else if(i == 0 or j == 0 or i == cells - 1 or j == cells - 1) {
+		return 1;
+	} 
+	else{
 
+		if (i == j or i + j == cells - 1) 
+				return 2;
+			
+			else return 3;
+		
+	}
+}
+
+int Aplusi(int i, int j) {
+	if (j == 0 or j == cells - 1)	return 0;
+
+	if (i < cells - 2)	 return -1;
+	
+	else if (i == cells - 2) return 0;
+
+	else return 0;
+}
+
+int Aplusj(int i, int j) {
+	if (i == 0 or i == cells - 1)	return 0;
+
+	if (j < cells - 2)	 return -1;
+
+	else if (j == cells - 2) return 0;
+
+	else return 0;
+}
+
+void mic0() {
+	double tuning = 0.97;
+	for(int i = 1; i < cells; i++)
+		for (int j = 1; j < cells; j++) {
+			double e = Adiag(i, j) 
+				- pow(Aplusi(i - 1, j) * precon[i - 1][j], 2.0)
+				- pow(Aplusj(i, j - 1) * precon[i][j - 1], 2.0)
+				- tuning * (Aplusi(i - 1, j) * Aplusj(i - 1, j) * precon[i - 1][j] * precon[i - 1][j]
+					+ Aplusj(i, j - 1) * Aplusi(i, j - 1) * precon[i][j - 1] * precon[i][j - 1]);
+			precon[i][j] = 1 / sqrt(e + 1e-30);
+		}
+}
+
+void applyprecon() {
+	// Solving Az = r
+	// Holding A = LL^T
+	// First solve Lq = r
+	for(int i = 1; i < cells; i++)
+		for (int j = 1; j < cells; j++) {
+			double t = r[i][j] - Aplusi(i - 1, j) * precon[i - 1][j] * q[i - 1][j]
+							   - Aplusj(i, j - 1) * precon[i][j - 1] * q[i][j - 1];
+			q[i][j] = t * precon[i][j];
+		}
+	// Next Solve L^T z = q
+	for(int i = cells - 2; i >= 0; i--)
+		for (int j = cells - 2; j >= 0; j--) {
+			double t = q[i][j] - Aplusi(i, j) * precon[i][j] * z[i + 1][j]
+							   - Aplusj(i, j) * precon[i][j] * z[i][j + 1];
+			z[i][j] = t * precon[i][j];
+		}
+}
+
+double dotproduct(char rOrs) {
+	double dp = 0.0;
+	if (rOrs == 'r') {
+		for (int i = 0; i < cells; i++)
+			for (int j = 0; j < cells; j++) {
+				dp += z[i][j] * r[i][j];
+			}
+	}
+	else if (rOrs == 's') {
+		for (int i = 0; i < cells; i++)
+			for (int j = 0; j < cells; j++) {
+				dp += z[i][j] * s[i][j];
+			}
+	}
+	return dp;
+}
+
+double A(int i, int j, int k, int l) {
+	if (i == k and j == l)	return Adiag(i, j);
+	else if (i + 1 == k and j == l) return Aplusi(i, j);
+	else if (i - 1 == k and j == l) return Aplusi(i - 1, j);
+	else if (i == k and j + 1 == l) return Aplusj(i, j);
+	else if (i == k and j - 1 == l) return Aplusj(i, j - 1);
+	else return 0.0;
+}
+
+void applyA() {
+	for(int i = 0; i < cells; i++)
+		for(int j = 0; j < cells; j++)
+			for(int k = 0; k < cells; k++)
+				for (int l = 0; l < cells; l++) {
+					if (A(i, j, k, l))
+						z[k][l] += A(i, j, k, l) * s[k][l];
+					else continue;
+				}
+}
 
 void Tick(double dt) {
 
 	double dvG = gravity * dt;
 	double dtbydx = dt / dx;
-//	double dxbydt = dx / dt;
 
-	// velocity at solid boundaries = 0
-//#pragma omp parallel for
-/*	for (int i = 0; i < cells; i++) {
-		v[i][0] = 0.0f;  // bottiom wall
-		v[i][cells] = 0.0f; // Top wall
-		u[0][i] = 0.0f; // Left wall
-		u[cells][i] = 0.0f; // Right wall
-	}*/
-
-
-	// Advect u and v
-//#pragma omp parallel for 
+		// Advect u and v
+	//#pragma omp parallel for 
 	for (int idx = 0; idx <= cells * cells; ++idx) {
 		int i = idx / cells;
 		int j = idx % cells;
@@ -367,80 +404,80 @@ void Tick(double dt) {
 
 			///  why fluid[i-1][j] != 0 ?
 		//	if (fluid[i][j] != 0.f or fluid[i - 1][j] != 0.f) {
-				float x = i;
-				float y = j + 0.5f;
+			double x = i;
+			double y = j + 0.5f;
 
-				// Stage 1: Velocity at starting point (x, y)
-				float k1x = u[i][j];
-				float k1y = 0.25f * (v[i][j] + v[i - 1][j] + v[i][j + 1] + v[i - 1][j + 1]); // Average v at u's location
+			// Stage 1: Velocity at starting point (x, y)
+			double k1x = u[i][j];
+			double k1y = 0.25f * (v[i][j] + v[i - 1][j] + v[i][j + 1] + v[i - 1][j + 1]); // Average v at u's location
 
-				// Stage 2: Velocity at first midpoint (t - dt/2)
-				float x2 = x - 0.5 * k1x * dtbydx;
-				float y2 = y - 0.5 * k1y * dtbydx;
-				float k2x = samplevelocity(x2, y2, 'u');
-				float k2y = samplevelocity(x2, y2, 'v');
+			// Stage 2: Velocity at first midpoint (t - dt/2)
+			double x2 = x - 0.5 * k1x * dtbydx;
+			double y2 = y - 0.5 * k1y * dtbydx;
+			double k2x = samplevelocity(x2, y2, 'u');
+			double k2y = samplevelocity(x2, y2, 'v');
 
-				// Stage 3: Velocity at second midpoint (t - dt/2)
-				float x3 = x - 0.5f * dtbydx * k2x;
-				float y3 = y - 0.5f * dtbydx * k2y;
-				float k3x = samplevelocity(x3, y3, 'u');
-				float k3y = samplevelocity(x3, y3, 'v');
+			// Stage 3: Velocity at second midpoint (t - dt/2)
+			double x3 = x - 0.5f * dtbydx * k2x;
+			double y3 = y - 0.5f * dtbydx * k2y;
+			double k3x = samplevelocity(x3, y3, 'u');
+			double k3y = samplevelocity(x3, y3, 'v');
 
-				// Stage 4: Velocity at endpoint (t - dt)
-				float x4 = x - dtbydx * k3x;
-				float y4 = y - dtbydx * k3y;
-				float k4x = samplevelocity(x4, y4, 'u');
-				float k4y = samplevelocity(x4, y4, 'v');
+			// Stage 4: Velocity at endpoint (t - dt)
+			double x4 = x - dtbydx * k3x;
+			double y4 = y - dtbydx * k3y;
+			double k4x = samplevelocity(x4, y4, 'u');
+			double k4y = samplevelocity(x4, y4, 'v');
 
-				// Combine velocities with RK4 weights
-				float vx = (k1x + 2 * k2x + 2 * k3x + k4x) / 6.0f;
-				float vy = (k1y + 2 * k2y + 2 * k3y + k4y) / 6.0f;
+			// Combine velocities with RK4 weights
+			double vx = (k1x + 2 * k2x + 2 * k3x + k4x) / 6.0f;
+			double vy = (k1y + 2 * k2y + 2 * k3y + k4y) / 6.0f;
 
-				// Trace back full step using combined velocity
-				float prevX = x - dtbydx * vx;
-				float prevY = y - dtbydx * vy;
-						
-				newU[i][j] = samplevelocity(prevX, prevY, 'u');
-		//	}
+			// Trace back full step using combined velocity
+			double prevX = x - dtbydx * vx;
+			double prevY = y - dtbydx * vy;
+
+			newU[i][j] = samplevelocity(prevX, prevY, 'u');
+			//	}
 		}
 
 		// --- v‐advection
 		if (j > 1 and j < cells - 1 and i > 0 and i < cells - 1) {
-		//	if (fluid[i][j] != 0.f or fluid[i][j - 1] != 0.f) {
-				float x = i + 0.5f;
-				float y = j;
+			//	if (fluid[i][j] != 0.f or fluid[i][j - 1] != 0.f) {
+			double x = i + 0.5f;
+			double y = j;
 
-				// Stage 1
-				float k1x = 0.25f * (u[i][j] + u[i + 1][j] + u[i][j - 1] + u[i + 1][j - 1]); // Average u at v's location
-				float k1y = v[i][j];
+			// Stage 1
+			double k1x = 0.25f * (u[i][j] + u[i + 1][j] + u[i][j - 1] + u[i + 1][j - 1]); // Average u at v's location
+			double k1y = v[i][j];
 
-				// Stage 2: Velocity at first midpoint (t - dt/2)
-				float x2 = x - 0.5 * k1x * dtbydx;
-				float y2 = y - 0.5 * k1y * dtbydx;
-				float k2x = samplevelocity(x2, y2, 'u');
-				float k2y = samplevelocity(x2, y2, 'v');
+			// Stage 2: Velocity at first midpoint (t - dt/2)
+			double x2 = x - 0.5 * k1x * dtbydx;
+			double y2 = y - 0.5 * k1y * dtbydx;
+			double k2x = samplevelocity(x2, y2, 'u');
+			double k2y = samplevelocity(x2, y2, 'v');
 
-				// Stage 3: Velocity at second midpoint (t - dt/2)
-				float x3 = x - 0.5f * dtbydx * k2x;
-				float y3 = y - 0.5f * dtbydx * k2y;
-				float k3x = samplevelocity(x3, y3, 'u');
-				float k3y = samplevelocity(x3, y3, 'v');
+			// Stage 3: Velocity at second midpoint (t - dt/2)
+			double x3 = x - 0.5f * dtbydx * k2x;
+			double y3 = y - 0.5f * dtbydx * k2y;
+			double k3x = samplevelocity(x3, y3, 'u');
+			double k3y = samplevelocity(x3, y3, 'v');
 
-				// Stage 4: Velocity at endpoint (t - dt)
-				float x4 = x - dtbydx * k3x;
-				float y4 = y - dtbydx * k3y;
-				float k4x = samplevelocity(x4, y4, 'u');
-				float k4y = samplevelocity(x4, y4, 'v');
+			// Stage 4: Velocity at endpoint (t - dt)
+			double x4 = x - dtbydx * k3x;
+			double y4 = y - dtbydx * k3y;
+			double k4x = samplevelocity(x4, y4, 'u');
+			double k4y = samplevelocity(x4, y4, 'v');
 
-				// Combine velocities with RK4 weights
-				float vx = (k1x + 2 * k2x + 2 * k3x + k4x) / 6.0f;
-				float vy = (k1y + 2 * k2y + 2 * k3y + k4y) / 6.0f;
+			// Combine velocities with RK4 weights
+			double vx = (k1x + 2 * k2x + 2 * k3x + k4x) / 6.0f;
+			double vy = (k1y + 2 * k2y + 2 * k3y + k4y) / 6.0f;
 
-				// Trace back full step using combined velocity
-				float prevX = x - dtbydx * vx;
-				float prevY = y - dtbydx * vy;
-				newV[i][j] = samplevelocity(prevX, prevY, 'v');
-		//	}
+			// Trace back full step using combined velocity
+			double prevX = x - dtbydx * vx;
+			double prevY = y - dtbydx * vy;
+			newV[i][j] = samplevelocity(prevX, prevY, 'v');
+			//	}
 		}
 	}
 
@@ -475,47 +512,47 @@ void Tick(double dt) {
 
 		if (i > 0 and j > 0 and i < cells - 1 and j < cells - 1) {
 
-			float x = i + 0.5f;
-			float y = j + 0.5f;
+			double x = i + 0.5f;
+			double y = j + 0.5f;
 
 			// Forward Euler
-		/*	float vx = (u[i][j] + u[i + 1][j]) * 0.5f;
+			float vx = (u[i][j] + u[i + 1][j]) * 0.5f;
 			float vy = (v[i][j] + v[i][j + 1]) * 0.5f;
 
-			float prevX = x - vx * dt_dx;
-			float prevY = y - vy * dt_dx;*/
+			float prevX = x - vx * dtbydx;
+			float prevY = y - vy * dtbydx;
 
 
 			// RK4
 			// Stage 1 : Velocity at starting point (x, y)
-			float k1x = (u[i][j] + u[i + 1][j]) * 0.5f;
-			float k1y = (v[i][j] + v[i][j + 1]) * 0.5f;
+		/*	double k1x = (u[i][j] + u[i + 1][j]) * 0.5f;
+			double k1y = (v[i][j] + v[i][j + 1]) * 0.5f;
 
 			// Stage 2: Velocity at first midpoint (t - dt/2)
-			float x2 = x - 0.5f * dtbydx * k1x;
-			float y2 = y - 0.5f * dtbydx * k1y;
-			float k2x = samplevelocity(x2, y2, 'u');
-			float k2y = samplevelocity(x2, y2, 'v');
+			double x2 = x - 0.5f * dtbydx * k1x;
+			double y2 = y - 0.5f * dtbydx * k1y;
+			double k2x = samplevelocity(x2, y2, 'u');
+			double k2y = samplevelocity(x2, y2, 'v');
 
 			// Stage 3: Velocity at second midpoint (t - dt/2)
-			float x3 = x - 0.5f * dtbydx * k2x;
-			float y3 = y - 0.5f * dtbydx * k2y;
-			float k3x = samplevelocity(x3, y3, 'u');
-			float k3y = samplevelocity(x3, y3, 'v');
+			double x3 = x - 0.5f * dtbydx * k2x;
+			double y3 = y - 0.5f * dtbydx * k2y;
+			double k3x = samplevelocity(x3, y3, 'u');
+			double k3y = samplevelocity(x3, y3, 'v');
 
 			// Stage 4: Velocity at endpoint (t - dt)
-			float x4 = x - dtbydx * k3x;
-			float y4 = y - dtbydx * k3y;
-			float k4x = samplevelocity(x4, y4, 'u');
-			float k4y = samplevelocity(x4, y4, 'v');
+			double x4 = x - dtbydx * k3x;
+			double y4 = y - dtbydx * k3y;
+			double k4x = samplevelocity(x4, y4, 'u');
+			double k4y = samplevelocity(x4, y4, 'v');
 
 			// Combine velocities with RK4 weights
-			float vx = (k1x + 2 * k2x + 2 * k3x + k4x) / 6.0f;
-			float vy = (k1y + 2 * k2y + 2 * k3y + k4y) / 6.0f;
+			double vx = (k1x + 2 * k2x + 2 * k3x + k4x) / 6.0f;
+			double vy = (k1y + 2 * k2y + 2 * k3y + k4y) / 6.0f;
 
 			// Trace back full step using combined velocity
-			float prevX = x - dtbydx * vx;
-			float prevY = y - dtbydx * vy;
+			double prevX = x - dtbydx * vx;
+			double prevY = y - dtbydx * vy;*/
 
 			prevX = clamp(prevX, 1.f, cells - 1); // Clamping the prevx between 0 and cells - 1
 			prevY = clamp(prevY, 1.f, cells - 1);
@@ -538,25 +575,25 @@ void Tick(double dt) {
 		for (int j = 1; j <= cells - 1; ++j) {
 			/// Should I check whether the fluid is there ?
 		//	if (fluid[i][j] == 1.f and fluid[i][j - 1] == 1.f)
-				v[i][j] += dvG;
+			v[i][j] += dvG;
 
-			
+
 		}
 
-
-	float(*fx)[cells] = new float[cells][cells];
-	float(*fy)[cells] = new float[cells][cells];
+/*
+	double(*fx)[cells] = new double[cells][cells];
+	double(*fy)[cells] = new double[cells][cells];
 
 	// VORTICITY CONFINEMENT
-	for(int i = 0; i < cells; i++)
+	for (int i = 0; i < cells; i++)
 		for (int j = 0; j < cells; j++) {
 			if (i != 0 and j != 0 and i != cells - 1 and j != cells - 1)
-			vorticity[i][j] = fabs(
+				vorticity[i][j] = fabs(
 					((v[i + 1][j] + v[i + 1][j + 1]) / 2.f - (v[i - 1][j] + v[i - 1][j + 1]) / 2.f)
-				  - ((u[i][j + 1] + u[i + 1][j + 1]) / 2.f - (u[i][j - 1] + u[i + 1][j + 1]) / 2.f) / (2 * dx));
+					- ((u[i][j + 1] + u[i + 1][j + 1]) / 2.f - (u[i][j - 1] + u[i + 1][j + 1]) / 2.f) / (2 * dx));
 
-			fx[i][j] = 0.f;
-			fy[i][j] = 0.f;
+			fx[i][j] = 0.0;
+			fy[i][j] = 0.0;
 		}
 
 
@@ -565,13 +602,13 @@ void Tick(double dt) {
 		for (int j = 1; j < cells - 1; j++) {
 			float grad_x = (vorticity[i + 1][j] - vorticity[i - 1][j]) / (2 * dx);
 			float grad_y = (vorticity[i][j + 1] - vorticity[i][j - 1]) / (2 * dx);
-			
+
 			float vecLen = sqrt(grad_x * grad_x + grad_y * grad_y);
-			if (vecLen != 0.f) {
+			if (vecLen != 0.0) {
 				grad_x /= vecLen;
 				grad_y /= vecLen;
 
-				float epsilon = 1.f;
+				float epsilon = 1.0;
 				fx[i][j] = epsilon * dx * (grad_y * vorticity[i][j]);
 				fy[i][j] = epsilon * dx * (-grad_x * vorticity[i][j]);
 
@@ -586,107 +623,102 @@ void Tick(double dt) {
 
 	delete[] fx;
 	delete[] fy;
-
+	*/
 
 
 	// Calculate divergence
-//#pragma omp parallel for 
 	for (int idx = 0; idx < cells * cells; ++idx) {
 		int i = idx / cells;
 		int j = idx % cells;
 		CalculateDivergence(i, j);
 
-	//	if (fluid[i][j] != 1 and fluid[i][j] != 0)
-		//	printf("fluid = %f\n", fluid[i][j]);
-		//	printf("pressure = %f\n", p[i][j]);
+		//	if (fluid[i][j] != 1 and fluid[i][j] != 0)
+			//	printf("fluid = %f\n", fluid[i][j]);
+			//	printf("pressure = %f\n", p[i][j]);
 	}
 
+	// MIC-PCG 
 	const double max_error = 1e-6;
-	const int max_iter = 100;
+	const int max_iter = 50;
 	double max_delta = 0.f;
-	float old_p = 0.f;
-	int iter;
+
+	memset(p, 0.0, sizeof(p));
+	
+	for(int i = 0; i < cells; i++)
+		for (int j = 0; j < cells; j++) {
+			r[i][j] = divergence[i][j] * (-1 / dtbydx);
+		}
+
+	applyprecon();
+	memcpy(s, z, sizeof(s));
+
+	double sigma = dotproduct('r');
+
+	int iter = 0;
 	for (iter = 0; iter < max_iter; ++iter) {
 
+		applyA();
 
-		// Gauss Seidel Method
-		for (int i = 0; i < cells; ++i) 
-			for (int j = 0; j < cells; ++j) {
+		double alpha = dotproduct('s');
 
-				// Non Wall cells
-				if (i > 0 and j > 0 and i < cells - 1 and j < cells - 1) {
-					if (fluid[i][j] == 1.f) {
-						old_p = p[i][j];
+		for(int i = 0; i < cells; i++)
+			for (int j = 0; j < cells; j++) {
+				p[i][j] += alpha * s[i][j];
+				r[i][j] -= alpha * z[i][j];
 
-						float new_p = CalculateNewPressure(i, j, 1/dtbydx);
-
-						p[i][j] = old_p + (1.9) * (new_p - old_p);
-						max_delta = fmax(fabs(p[i][j] - old_p), max_delta);
-					}
-					else if (fluid[i][j] == 0.f) {
-						p[i][j] = 0.f; continue;
-					}
-				}
-
-				// "Wall Pressures"
-				else
-				{
-					if (i != j and i + j != cells - 1) {
-						if (i == 0) {
-							p[i][j] = p[i+1][j] - u[i+1][j] / dtbydx;
-						}
-						else if (i == cells - 1) {
-							p[i][j] = p[i-1][j] + u[i][j] / dtbydx;
-						}
-						else if (j == 0) {
-							p[i][j] = p[i][j + 1] - v[i][1] / dtbydx;
-						}
-						else if (j == cells - 1) {
-							p[i][j] = p[i][j - 1] + v[i][j] / dtbydx;
-						}
-					}
-				}
+				max_delta = fmax(fabs(r[i][j]), max_delta);
 			}
 
-	
-				
-			
+		if (max_delta < max_error) break;
+
+		applyprecon();
+
+		double sigma_new = dotproduct('r');
+
+		double beta = sigma_new;
+
+		for (int i = 0; i < cells; i++)
+			for (int j = 0; j < cells; j++) {
+				s[i][j] = z[i][j] + beta * s[i][j];
+			}
 
 
-		if (max_delta < max_error and iter > 8) break;
+		sigma = sigma_new;
 	}
 
-//	printf("error = %0.15f\n", max_delta);
-//	printf("iter = %d\n", iter);
+	//	printf("error = %0.15f\n", max_delta);
+
+	if(iter == max_iter)
+		printf("report iteration limit exceeded\n");
 
 
 
 
-	// Applying the pressure gradient
+		// Applying the pressure gradient
 
-	// Horizontal velocity (u)
-//#pragma omp parallel for
+		// Horizontal velocity (u)
+	//#pragma omp parallel for
 	for (int i = 1; i < cells; ++i) {
 		for (int j = 1; j < cells - 1; ++j) {
-			if (fluid[i][j] or fluid[i-1][j])
+		//	if (fluid[i][j] or fluid[i - 1][j])
 				u[i][j] -= (p[i][j] - p[i - 1][j]) * dtbydx;
 		}
 	}
 
 	// Vertical velocity (v)
 //#pragma omp parallel for
-	for (int i = 0; i < cells; ++i) {
+	for (int i = 1; i < cells - 1; ++i) {
 		for (int j = 1; j < cells; ++j) {
-		//	if (fluid[i][j] or  fluid[i][j-1])
-				v[i][j] -= (p[i][j] - p[i][j - 1]) * dtbydx;
+		//		if (fluid[i][j] or  fluid[i][j-1])
+			v[i][j] -= (p[i][j] - p[i][j - 1]) * dtbydx;
 		}
 	}
 
 
 
 	// Stability Condition work
-	float Umax = 0;
-	for(int a = 0; a < cells; a++)
+/*	float Umax = 0;
+	for (int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
 			if (fabs(u[a][b]) > Umax)
 				Umax = fabs(u[a][b]);
@@ -696,7 +728,7 @@ void Tick(double dt) {
 	Umax += sqrt(5 * dx * -gravity);
 
 
-	printf("const = %f\n", Umax * dt / dx);
+	printf("const = %f\n", Umax * dt / dx);*/
 
 }
 
@@ -737,7 +769,7 @@ int main()
 
 	// Disable VSync (immediately after window creation)
 	glfwSwapInterval(0);
-	
+
 
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
@@ -823,7 +855,7 @@ void main() {
 		glGetProgramInfoLog(shaderProgram, 512, 0, infoLog);
 		std::cout << "Failed to link the shader program! ERR: " << infoLog << std::endl;
 	}
-	
+
 
 
 	glDeleteShader(vertexShader);
@@ -953,10 +985,10 @@ void main() {
 		Tick(dt);
 		PrevTime = CurrTime;
 
-	//	printf("FPS = %f\n", 1/dt);
+		//	printf("FPS = %f\n", 1/dt);
 
-		// 4. BIND TEXTURE BEFORE UPDATING
-		// Update textures
+			// 4. BIND TEXTURE BEFORE UPDATING
+			// Update textures
 		glBindTexture(GL_TEXTURE_2D, fluidTexture);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, cells, cells, GL_RED, GL_FLOAT, fluid);
 
@@ -975,9 +1007,9 @@ void main() {
 			// Calculate max divergence for normalization
 			maxValue = 0.0f;
 			for (int i = 0; i < cells; i++)
-				for(int j = 0; j < cells; j++){
-				maxValue = fmax(maxValue, fabs(divergence[i][j]));
-			}
+				for (int j = 0; j < cells; j++) {
+					maxValue = fmax(maxValue, fabs(divergence[i][j]));
+				}
 			if (maxValue < 0.001f) maxValue = 1.0f;  // Avoid division by zero
 		}
 		else {
@@ -1004,7 +1036,7 @@ void main() {
 		glfwPollEvents();
 
 		// Frame rate limiting to 30 FPS
-		
+
 		double frameEnd = glfwGetTime();
 		double elapsedTime = frameEnd - CurrTime;  // Time taken for this frame
 
