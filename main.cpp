@@ -38,13 +38,13 @@ GLuint createShaderProgram(const char* vertSrc, const char* fragSrc) {
 
 
 
-double gravity = -0.00015;
+double gravity = -0.0003;
 
 double prevTime = 0.0f;
 
 const float omega = 1.9f;
 
-const double targetFrameTime = 1.0 / 0.5f;  // 30 FPS = 0.033 seconds per frame
+const double targetFrameTime = 1.0 / 2.0;  // 30 FPS = 0.033 seconds per frame
 
 const int cells = 128;
 const double dx = 2.f / cells;
@@ -86,7 +86,7 @@ void initialize() {
 
 	for (int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
-			if (a > cells / 3 and a < 2 * cells / 3 and b > cells / 3 and b < 2 * cells / 3) {
+			if (a > cells / 3 and a < 2 * cells / 3 and b > 0 and b < 2 * cells / 3) {
 				fluid[a][b] = 1.f;
 			}
 			else
@@ -113,13 +113,20 @@ void initialize() {
 void CalculateDivergence(int i, int j) {
 	if (fluid[i][j] == 1.0) {
 		if (i == 0 or i == cells - 1 or j == 0 or j == cells - 1) {
-
+			if (i != j and i + j != cells - 1) {
+				if (i == 0) divergence[i][j] = u[1][j];
+				else if (j == 0) divergence[i][j] = v[i][1];
+				else if (i == cells - 1) divergence[i][j] = -u[i][j];
+				else if (j == cells - 1) divergence[i][j] = -v[i][j];
+			}
 		}
 
 		else if (i == 1 or i == cells - 2 or j == 1 or j == cells - 2) {
-			double du_dx = (u[i + 1][j] * (i + 1 == cells - 1 ? 0.0 : 1.0) - u[i][j] * (i == 1 ? 0.0 : 1.0));
+			double du_dx = (u[i + 1][j] * (i + 1 == cells - 1 ? 0.0 : 1.0)
+				- u[i][j] * (i == 1 ? 0.0 : 1.0));
 
-			double dv_dy = (v[i][j + 1] * (j + 1 == cells - 1 ? 0.0 : 1.0) - v[i][j] * (j == 1 ? 0.0 : 1.0));
+			double dv_dy = (v[i][j + 1] * (j + 1 == cells - 1 ? 0.0 : 1.0)
+				- v[i][j] * (j == 1 ? 0.0 : 1.0));
 
 			divergence[i][j] = du_dx + dv_dy;
 		}
@@ -130,93 +137,10 @@ void CalculateDivergence(int i, int j) {
 			divergence[i][j] = du_dx + dv_dy;
 		}
 	}
-	else
-		divergence[i][j] = 0.0;
+//	else
+	//	divergence[i][j] = 0.0;
 }
 
-void ForceIncompressibility(int i, int j) {
-
-	if (fabs(i - j) + fabs(i + j - cells + 1) < cells - 1) // checking for non boundary cells
-	{
-		float d = divergence[i][j] / 4.f;
-		u[i][j] += d;
-		u[i + 1][j] -= d;
-		v[i][j] += d;
-		v[i][j + 1] -= d;
-
-	}
-
-	else {
-
-		if (i == j or i + j == cells - 1)
-		{
-			if (i == 0 and j == 0) {
-				float d = divergence[i][j] / 2;
-				//	u[i][j] += d;
-				u[i + 1][j] -= d;
-				//	v[i][j] += d;
-				v[i][j + 1] -= d;
-			}
-			else if (i == cells - 1 and j == cells - 1) {
-				float d = divergence[i][j] / 2;
-				u[i][j] += d;
-				//	u[i + 1][j] -= d;
-				v[i][j] += d;
-				//	v[i][j + 1] -= d;
-			}
-			else if (i == cells - 1 and j == 0) {
-				float d = divergence[i][j] / 2;
-				u[i][j] += d;
-				//	u[i + 1][j] -= d;
-				//	v[i][j] += d;
-				v[i][j + 1] -= d;
-			}
-			else if (i == 0 and j == cells - 1) {
-				float d = divergence[i][j] / 2;
-				//	u[i][j] += d;
-				u[i + 1][j] -= d;
-				v[i][j] += d;
-				//	v[i][j + 1] -= d;
-			}
-		}
-
-		else {
-			if (i == 0)
-			{
-				float d = divergence[i][j] / 3;
-				//	u[i][j] += d;
-				u[i + 1][j] -= d;
-				v[i][j] += d;
-				v[i][j + 1] -= d;
-			}
-			else if (j == 0)
-			{
-				float d = divergence[i][j] / 3;
-				u[i][j] += d;
-				u[i + 1][j] -= d;
-				//	v[i][j] += d;
-				v[i][j + 1] -= d;
-			}
-			else if (i == cells - 1)
-			{
-				float d = divergence[i][j] / 3;
-				u[i][j] += d;
-				//	u[i + 1][j] -= d;
-				v[i][j] += d;
-				v[i][j + 1] -= d;
-			}
-			else if (j == cells - 1)
-			{
-				float d = divergence[i][j] / 3;
-				u[i][j] += d;
-				u[i + 1][j] -= d;
-				v[i][j] += d;
-				//	v[i][j + 1] -= d;
-			}
-		}
-
-	}
-}
 
 
 double CalculateNewPressure(int i, int j, double dxbydt) {
@@ -329,6 +253,7 @@ void mic0() {
 					+ Aplusj(i, j - 1) * Aplusi(i, j - 1) * precon[i][j - 1] * precon[i][j - 1]);
 			precon[i][j] = 1 / sqrt(e + 1e-30);
 		}
+	printf("Calculated the precon\n");
 }
 
 void applyprecon() {
@@ -348,6 +273,7 @@ void applyprecon() {
 							   - Aplusj(i, j) * precon[i][j] * z[i][j + 1];
 			z[i][j] = t * precon[i][j];
 		}
+//	printf("Applied the precon\n");
 }
 
 double dotproduct(char rOrs) {
@@ -377,14 +303,23 @@ double A(int i, int j, int k, int l) {
 }
 
 void applyA() {
-	for(int i = 0; i < cells; i++)
-		for(int j = 0; j < cells; j++)
-			for(int k = 0; k < cells; k++)
-				for (int l = 0; l < cells; l++) {
-					if (A(i, j, k, l))
-						z[k][l] += A(i, j, k, l) * s[k][l];
-					else continue;
-				}
+	// Iterate over each cell (i,j) - equation index
+	for (int i = 0; i < cells; i++) {
+		for (int j = 0; j < cells; j++) {
+			// Process center point (i,j)
+			z[i][j] += A(i, j, i, j) * s[i][j];
+
+			// Process neighbor points (if within bounds)
+			// Top neighbor (i-1, j)
+			if (i > 0) z[i - 1][j] += A(i, j, i - 1, j) * s[i - 1][j];
+			// Bottom neighbor (i+1, j)
+			if (i < cells - 1) z[i + 1][j] += A(i, j, i + 1, j) * s[i + 1][j];
+			// Left neighbor (i, j-1)
+			if (j > 0) z[i][j - 1] += A(i, j, i, j - 1) * s[i][j - 1];
+			// Right neighbor (i, j+1)
+			if (j < cells - 1) z[i][j + 1] += A(i, j, i, j + 1) * s[i][j + 1];
+		}
+	}
 }
 
 void Tick(double dt) {
@@ -406,11 +341,11 @@ void Tick(double dt) {
 			///  why fluid[i-1][j] != 0 ?
 		//	if (fluid[i][j] != 0.f or fluid[i - 1][j] != 0.f) {
 			double x = i;
-			double y = j + 0.5f;
+			double y = j + 0.5;
 
 			// Stage 1: Velocity at starting point (x, y)
 			double k1x = u[i][j];
-			double k1y = 0.25f * (v[i][j] + v[i - 1][j] + v[i][j + 1] + v[i - 1][j + 1]); // Average v at u's location
+			double k1y = 0.25 * (v[i][j] + v[i - 1][j] + v[i][j + 1] + v[i - 1][j + 1]); // Average v at u's location
 
 			// Stage 2: Velocity at first midpoint (t - dt/2)
 			double x2 = x - 0.5 * k1x * dtbydx;
@@ -419,8 +354,8 @@ void Tick(double dt) {
 			double k2y = samplevelocity(x2, y2, 'v');
 
 			// Stage 3: Velocity at second midpoint (t - dt/2)
-			double x3 = x - 0.5f * dtbydx * k2x;
-			double y3 = y - 0.5f * dtbydx * k2y;
+			double x3 = x - 0.5 * dtbydx * k2x;
+			double y3 = y - 0.5 * dtbydx * k2y;
 			double k3x = samplevelocity(x3, y3, 'u');
 			double k3y = samplevelocity(x3, y3, 'v');
 
@@ -445,11 +380,11 @@ void Tick(double dt) {
 		// --- v‐advection
 		if (j > 1 and j < cells - 1 and i > 0 and i < cells - 1) {
 			//	if (fluid[i][j] != 0.f or fluid[i][j - 1] != 0.f) {
-			double x = i + 0.5f;
+			double x = i + 0.5;
 			double y = j;
 
 			// Stage 1
-			double k1x = 0.25f * (u[i][j] + u[i + 1][j] + u[i][j - 1] + u[i + 1][j - 1]); // Average u at v's location
+			double k1x = 0.25 * (u[i][j] + u[i + 1][j] + u[i][j - 1] + u[i + 1][j - 1]); // Average u at v's location
 			double k1y = v[i][j];
 
 			// Stage 2: Velocity at first midpoint (t - dt/2)
@@ -459,8 +394,8 @@ void Tick(double dt) {
 			double k2y = samplevelocity(x2, y2, 'v');
 
 			// Stage 3: Velocity at second midpoint (t - dt/2)
-			double x3 = x - 0.5f * dtbydx * k2x;
-			double y3 = y - 0.5f * dtbydx * k2y;
+			double x3 = x - 0.5 * dtbydx * k2x;
+			double y3 = y - 0.5 * dtbydx * k2y;
 			double k3x = samplevelocity(x3, y3, 'u');
 			double k3y = samplevelocity(x3, y3, 'v');
 
@@ -481,6 +416,8 @@ void Tick(double dt) {
 			//	}
 		}
 	}
+
+//	printf("Advected u and v!\n");
 
 	auto tmp = u;
 	u = newU;
@@ -513,8 +450,8 @@ void Tick(double dt) {
 
 		if (i > 0 and j > 0 and i < cells - 1 and j < cells - 1) {
 
-			double x = i + 0.5f;
-			double y = j + 0.5f;
+			double x = i + 0.50;
+			double y = j + 0.50;
 
 			// Forward Euler
 		/*	float vx = (u[i][j] + u[i + 1][j]) * 0.5f;
@@ -555,8 +492,8 @@ void Tick(double dt) {
 			double prevX = x - dtbydx * vx;
 			double prevY = y - dtbydx * vy;
 
-			prevX = clamp(prevX, 1.f, cells - 1); // Clamping the prevx between 0 and cells - 1
-			prevY = clamp(prevY, 1.f, cells - 1);
+			prevX = clamp(prevX, 1.0, cells - 1); // Clamping the prevx between 0 and cells - 1
+			prevY = clamp(prevY, 1.0, cells - 1);
 
 			int pi = (int)(prevX);
 			int pj = (int)(prevY);
@@ -570,16 +507,20 @@ void Tick(double dt) {
 	fluid = f;
 	delete[] temp_fluid;
 
+//	printf("Advected the fluid!\n");
+
 	// apply gravity
 //#pragma omp parallel for 
-	for (int i = 0; i <= cells - 1; ++i)
-		for (int j = 1; j <= cells - 1; ++j) {
+	for (int i = 1; i <= cells - 2; ++i)
+		for (int j = 2; j <= cells - 2; ++j) {
 			/// Should I check whether the fluid is there ?
 		//	if (fluid[i][j] == 1.f and fluid[i][j - 1] == 1.f)
 			v[i][j] += dvG;
 
 
 		}
+
+//	printf("Gravity applied!\n");
 
 /*
 	double(*fx)[cells] = new double[cells][cells];
@@ -624,8 +565,8 @@ void Tick(double dt) {
 
 	delete[] fx;
 	delete[] fy;
+	
 	*/
-
 
 	// Calculate divergence
 	for (int idx = 0; idx < cells * cells; ++idx) {
@@ -638,9 +579,11 @@ void Tick(double dt) {
 			//	printf("pressure = %f\n", p[i][j]);
 	}
 
+//	printf("Divergence calculated!\n");
+
 	// MIC-PCG 
-	const double max_error = 1e-3;
-	const int max_iter = 100;
+	const double max_error = 1e-8;
+	const int max_iter = 10000;
 	double max_delta = 0.f;
 
 	memset(p, 0.0, sizeof(p));
@@ -658,7 +601,11 @@ void Tick(double dt) {
 	int iter = 0;
 	for (iter = 0; iter < max_iter; ++iter) {
 
+	//	printf("Before applying A\n");
+
 		applyA();
+
+	//	printf("After applying A\n");
 
 		double alpha = dotproduct('s');
 
@@ -687,10 +634,12 @@ void Tick(double dt) {
 		sigma = sigma_new;
 	}
 
-	//	printf("error = %0.15f\n", max_delta);
+		printf("error = %0.15f\n", max_delta);
 
 	if(iter == max_iter)
 		printf("report iteration limit exceeded\n");
+
+//	printf("Solved the pressure with max_delta = %lf\n", max_delta);
 
 
 
@@ -715,6 +664,7 @@ void Tick(double dt) {
 		}
 	}
 
+//	printf("Applied the gradient!\n");
 
 
 	// Stability Condition work
@@ -730,6 +680,8 @@ void Tick(double dt) {
 
 
 	printf("const = %f\n", Umax * dt / dx);*/
+
+	printf("\n");
 
 }
 
@@ -801,21 +753,26 @@ out vec4 fragColor;
 uniform sampler2D tex;
 
 void main() {
-    float density = texture(tex, texCoord).r;
+    // Grid parameters
+    const float gridSize = 128.0;
+    const float cellSize = 1.0 / gridSize;
     
-    // Background color (dark blue/black)
-    vec3 bgColor = vec3(0.0, 0.0, 0.0);
+    // Calculate grid position
+    vec2 gridPos = texCoord * gridSize;
     
-    // Fluid color (vibrant blue)
-    vec3 fluidColor = vec3(0.0, 0.0, 1.0);
+    // Boundary check (first and last columns/rows)
+    bool isBoundary = (gridPos.x < 1.0) || (gridPos.x >= gridSize - 1.0) ||
+                     (gridPos.y < 1.0) || (gridPos.y >= gridSize - 1.0);
     
-    // Add glow effect at higher densities
-    float glow = smoothstep(0.3, 1.0, density);
-    
-    // Blend between background and fluid with glow
-    vec3 color = mix(bgColor, fluidColor, density + glow*0.5);
-    
-    fragColor = vec4(color, 1.0);
+    // DEBUG: Show entire boundary area in red
+    if (isBoundary) {
+        fragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    } else {
+        float density = texture(tex, texCoord).r;
+        vec3 bgColor = vec3(0.0, 0.0, 0.0);
+        vec3 fluidColor = vec3(0.0, 0.0, 1.0);
+        fragColor = vec4(mix(bgColor, fluidColor, density), 1.0);
+    }
 }
 )";
 
