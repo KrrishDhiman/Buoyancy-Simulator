@@ -38,7 +38,7 @@ GLuint createShaderProgram(const char* vertSrc, const char* fragSrc) {
 
 
 
-double gravity = -0.0003;
+double gravity = -0.00009;
 
 double prevTime = 0.0f;
 
@@ -46,7 +46,7 @@ const float omega = 1.9f;
 
 const double targetFrameTime = 1.0 / 2.0;  // 30 FPS = 0.033 seconds per frame
 
-const int cells = 128;
+const int cells = 256;
 const double dx = 2.f / cells;
 //float center = cells * stepsize / 2 - 0.75f;
 double p[cells][cells] = { 0.0 };
@@ -86,7 +86,7 @@ void initialize() {
 
 	for (int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
-			if (a > cells / 3 and a < 2 * cells / 3 and b > 0 and b < 2 * cells / 3) {
+			if (a > cells / 3 and a < 2 * cells / 3 and b > 3 * cells / 5 and b < 2 * cells / 3) {
 				fluid[a][b] = 1.f;
 			}
 			else
@@ -321,6 +321,7 @@ void applyA() {
 		}
 	}
 }
+
 
 void Tick(double dt) {
 
@@ -582,62 +583,59 @@ void Tick(double dt) {
 //	printf("Divergence calculated!\n");
 
 	// MIC-PCG 
-	const double max_error = 1e-8;
-	const int max_iter = 10000;
+	const double max_error = 1e-6; 
+		const int max_iter = 300;
 	double max_delta = 0.f;
-
-	memset(p, 0.0, sizeof(p));
-	
-	for(int i = 0; i < cells; i++)
-		for (int j = 0; j < cells; j++) {
-			r[i][j] = divergence[i][j] * (-1 / dtbydx);
-		}
-
-	applyprecon();
-	memcpy(s, z, sizeof(s));
-
-	double sigma = dotproduct('r');
-
-	int iter = 0;
+	float old_p = 0.f;
+	int iter;
 	for (iter = 0; iter < max_iter; ++iter) {
 
-	//	printf("Before applying A\n");
+		// Gauss Seidel Method
+		for (int i = 0; i < cells; ++i)
+			for (int j = 0; j < cells; ++j) {
 
-		applyA();
+				// Non Wall cells
+				if (i > 0 and j > 0 and i < cells - 1 and j < cells - 1) {
+					if (fluid[i][j] == 1.f) {
+						old_p = p[i][j];
 
-	//	printf("After applying A\n");
+						float new_p = CalculateNewPressure(i, j, 1 / dtbydx);
 
-		double alpha = dotproduct('s');
+						p[i][j] = old_p + (1.9) * (new_p - old_p);
+						max_delta = fmax(fabs(p[i][j] - old_p), max_delta);
+					}
+					else if (fluid[i][j] == 0.f) {
+						p[i][j] = 0.f; continue;
+					}
+				}
 
-		for(int i = 0; i < cells; i++)
-			for (int j = 0; j < cells; j++) {
-				p[i][j] += alpha * s[i][j];
-				r[i][j] -= alpha * z[i][j];
-
-				max_delta = fmax(fabs(r[i][j]), max_delta);
+				// "Wall Pressures"
+				else
+				{
+					if (i != j and i + j != cells - 1) {
+						if (i == 0) {
+							p[i][j] = p[i + 1][j] - divergence[i][j] / dtbydx;
+						}
+						else if (i == cells - 1) {
+							p[i][j] = p[i - 1][j] - divergence[i][j] / dtbydx;
+						}
+						else if (j == 0) {
+							p[i][j] = p[i][j + 1] - divergence[i][j] / dtbydx;
+						}
+						else if (j == cells - 1) {
+							p[i][j] = p[i][j - 1] - divergence[i][j] / dtbydx;
+						}
+					}
+				}
 			}
 
-		if (max_delta < max_error) break;
-
-		applyprecon();
-
-		double sigma_new = dotproduct('r');
-
-		double beta = sigma_new;
-
-		for (int i = 0; i < cells; i++)
-			for (int j = 0; j < cells; j++) {
-				s[i][j] = z[i][j] + beta * s[i][j];
-			}
-
-
-		sigma = sigma_new;
+	//	if (max_delta < max_error and iter > 8) break;
 	}
 
-		printf("error = %0.15f\n", max_delta);
+		printf("error = %0.30f\n", max_delta);
 
-	if(iter == max_iter)
-		printf("report iteration limit exceeded\n");
+//	if(iter == max_iter)
+	//	printf("report iteration limit exceeded\n");
 
 //	printf("Solved the pressure with max_delta = %lf\n", max_delta);
 
