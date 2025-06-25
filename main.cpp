@@ -4,7 +4,6 @@
 #include <iostream>
 
 
-
 float clamp(float value, float minVal, float maxVal) {
 	if (value < minVal) return minVal;
 	if (value > maxVal) return maxVal;
@@ -39,15 +38,15 @@ GLuint createShaderProgram(const char* vertSrc, const char* fragSrc) {
 
 
 
-double gravity = -0.05f;
+double gravity = -0.00015;
 
 double prevTime = 0.0f;
 
 const float omega = 1.9f;
 
-const double targetFrameTime = 1.0 / 60.f;  // 30 FPS = 0.033 seconds per frame
+const double targetFrameTime = 1.0 / 0.5f;  // 30 FPS = 0.033 seconds per frame
 
-const int cells = 32;
+const int cells = 128;
 const double dx = 2.f / cells;
 //float center = cells * stepsize / 2 - 0.75f;
 double p[cells][cells] = { 0.0 };
@@ -393,8 +392,10 @@ void Tick(double dt) {
 	double dvG = gravity * dt;
 	double dtbydx = dt / dx;
 
+	printf("Time = %lf\n", dt);
+
 		// Advect u and v
-	//#pragma omp parallel for 
+	#pragma omp parallel for 
 	for (int idx = 0; idx <= cells * cells; ++idx) {
 		int i = idx / cells;
 		int j = idx % cells;
@@ -502,7 +503,7 @@ void Tick(double dt) {
 			temp_fluid[a][b] = 0.f;
 
 	// Advecting the fluid itself
-//#pragma omp parallel for 
+#pragma omp parallel for 
 	for (int idx = 0; idx < cells * cells; idx++)
 	{
 		int i = idx / cells;
@@ -516,16 +517,16 @@ void Tick(double dt) {
 			double y = j + 0.5f;
 
 			// Forward Euler
-			float vx = (u[i][j] + u[i + 1][j]) * 0.5f;
+		/*	float vx = (u[i][j] + u[i + 1][j]) * 0.5f;
 			float vy = (v[i][j] + v[i][j + 1]) * 0.5f;
 
 			float prevX = x - vx * dtbydx;
-			float prevY = y - vy * dtbydx;
+			float prevY = y - vy * dtbydx;*/
 
 
 			// RK4
 			// Stage 1 : Velocity at starting point (x, y)
-		/*	double k1x = (u[i][j] + u[i + 1][j]) * 0.5f;
+			double k1x = (u[i][j] + u[i + 1][j]) * 0.5f;
 			double k1y = (v[i][j] + v[i][j + 1]) * 0.5f;
 
 			// Stage 2: Velocity at first midpoint (t - dt/2)
@@ -552,7 +553,7 @@ void Tick(double dt) {
 
 			// Trace back full step using combined velocity
 			double prevX = x - dtbydx * vx;
-			double prevY = y - dtbydx * vy;*/
+			double prevY = y - dtbydx * vy;
 
 			prevX = clamp(prevX, 1.f, cells - 1); // Clamping the prevx between 0 and cells - 1
 			prevY = clamp(prevY, 1.f, cells - 1);
@@ -638,8 +639,8 @@ void Tick(double dt) {
 	}
 
 	// MIC-PCG 
-	const double max_error = 1e-6;
-	const int max_iter = 50;
+	const double max_error = 1e-3;
+	const int max_iter = 100;
 	double max_delta = 0.f;
 
 	memset(p, 0.0, sizeof(p));
