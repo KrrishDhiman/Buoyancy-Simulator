@@ -38,15 +38,15 @@ GLuint createShaderProgram(const char* vertSrc, const char* fragSrc) {
 
 
 
-double gravity = -0.00009;
+double gravity = -0.9;
 
 double prevTime = 0.0f;
 
 const float omega = 1.9f;
 
-const double targetFrameTime = 1.0 / 2.0;  // 30 FPS = 0.033 seconds per frame
+const double targetFrameTime = 1.0 / 25.0;  // 30 FPS = 0.033 seconds per frame
 
-const int cells = 256;
+const int cells = 128;
 const double dx = 2.f / cells;
 //float center = cells * stepsize / 2 - 0.75f;
 double p[cells][cells] = { 0.0 };
@@ -86,7 +86,7 @@ void initialize() {
 
 	for (int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
-			if (a > cells / 3 and a < 2 * cells / 3 and b > 3 * cells / 5 and b < 2 * cells / 3) {
+			if (fabs(a-cells/2)<cells/6 and b < cells/2) {
 				fluid[a][b] = 1.f;
 			}
 			else
@@ -107,11 +107,11 @@ void initialize() {
 			}
 		}
 
-	mic0();
+//	mic0();
 }
 
 void CalculateDivergence(int i, int j) {
-	if (fluid[i][j] == 1.0) {
+//	if (fluid[i][j] == 1.0) {
 		if (i == 0 or i == cells - 1 or j == 0 or j == cells - 1) {
 			if (i != j and i + j != cells - 1) {
 				if (i == 0) divergence[i][j] = u[1][j];
@@ -122,11 +122,11 @@ void CalculateDivergence(int i, int j) {
 		}
 
 		else if (i == 1 or i == cells - 2 or j == 1 or j == cells - 2) {
-			double du_dx = (u[i + 1][j] * (i + 1 == cells - 1 ? 0.0 : 1.0)
-				- u[i][j] * (i == 1 ? 0.0 : 1.0));
+			double du_dx = (u[i + 1][j]  * (i + 1 == cells - 1 ? 0.0 : 1.0)
+				- u[i][j] *(i == 1 ? 0.0 : 1.0));
 
-			double dv_dy = (v[i][j + 1] * (j + 1 == cells - 1 ? 0.0 : 1.0)
-				- v[i][j] * (j == 1 ? 0.0 : 1.0));
+			double dv_dy = (v[i][j + 1]  * (j + 1 == cells - 1 ? 0.0 : 1.0)
+				- v[i][j] *(j == 1 ? 0.0 : 1.0));
 
 			divergence[i][j] = du_dx + dv_dy;
 		}
@@ -136,7 +136,7 @@ void CalculateDivergence(int i, int j) {
 			double dv_dy = (v[i][j + 1] - v[i][j]);
 			divergence[i][j] = du_dx + dv_dy;
 		}
-	}
+//	}
 //	else
 	//	divergence[i][j] = 0.0;
 }
@@ -328,7 +328,7 @@ void Tick(double dt) {
 	double dvG = gravity * dt;
 	double dtbydx = dt / dx;
 
-	printf("Time = %lf\n", dt);
+	printf("Time = %lf\n", 1/dt);
 
 		// Advect u and v
 	#pragma omp parallel for 
@@ -569,22 +569,50 @@ void Tick(double dt) {
 	
 	*/
 
+	for (int a = 0; a < cells; a++) {
+		// left
+		u[1][a] = 0.0;
+		v[0][a] = v[1][a]; // free slip wall
+		u[cells - 1][a] = 0.0;	// right
+		v[cells - 1][a] = v[cells - 2][a];
+		v[a][1] = 0.0;	// down
+		u[a][0] = u[a][1];
+		v[a][cells - 1] = 0.0;	// up
+		u[a][cells - 1] = u[a][cells - 2];
+	}
+
 	// Calculate divergence
 	for (int idx = 0; idx < cells * cells; ++idx) {
 		int i = idx / cells;
 		int j = idx % cells;
 		CalculateDivergence(i, j);
-
-		//	if (fluid[i][j] != 1 and fluid[i][j] != 0)
-			//	printf("fluid = %f\n", fluid[i][j]);
-			//	printf("pressure = %f\n", p[i][j]);
 	}
+
+/*	for (int i = 1; i < cells - 1; i++)
+		for (int j = 1; j < cells - 1; j++) {
+			if (i > 1 and i < cells - 2 and j > 1 and j < cells - 2) {
+				u[i][j] += divergence[i][j] / 4.0;
+				u[i + 1][j] -= divergence[i][j] / 4.0;
+				v[i][j] += divergence[i][j] / 4.0;
+				v[i][j + 1] -= divergence[i][j] / 4.0;
+			}
+			else {
+				if ((i != j) or (i + j != cells - 1)) {
+					u[i][j] += (i == 1 ? 0.0 : 1.0) * divergence[i][j] / 3.0;
+					u[i + 1][j] -= (i == cells - 1 ? 0.0 : 1.0) * divergence[i][j] / 3.0;
+					v[i][j] += (j == 1 ? 0.0 : 1.0) * divergence[i][j] / 3.0;
+					v[i][j + 1] -= (j == cells - 1 ? 0.0 : 1.0) * divergence[i][j] / 3.0;
+				}
+			}
+		}*/
+
+	
 
 //	printf("Divergence calculated!\n");
 
 	// MIC-PCG 
-	const double max_error = 1e-6; 
-		const int max_iter = 300;
+	const double max_error = 1e-6;
+		const int max_iter = 100;
 	double max_delta = 0.f;
 	float old_p = 0.f;
 	int iter;
@@ -601,11 +629,11 @@ void Tick(double dt) {
 
 						float new_p = CalculateNewPressure(i, j, 1 / dtbydx);
 
-						p[i][j] = old_p + (1.9) * (new_p - old_p);
+						p[i][j] = old_p + (1.85) * (new_p - old_p);
 						max_delta = fmax(fabs(p[i][j] - old_p), max_delta);
 					}
 					else if (fluid[i][j] == 0.f) {
-						p[i][j] = 0.f; continue;
+						p[i][j] = 0.0; continue;
 					}
 				}
 
@@ -629,10 +657,21 @@ void Tick(double dt) {
 				}
 			}
 
-	//	if (max_delta < max_error and iter > 8) break;
+		if (max_delta < max_error and iter > 8) break;
 	}
 
-		printf("error = %0.30f\n", max_delta);
+	for (int z = 1; z < cells - 1; z++) {
+		// left bc 
+		p[0][z] = p[1][z] - divergence[0][z] / dtbydx;
+		// right bc
+		p[cells - 1][z] = p[cells - 2][z] - divergence[cells - 1][z] / dtbydx;
+		// up bc
+		p[z][cells - 1] = p[z][cells - 2] - divergence[z][cells - 1] / dtbydx;
+		// down bc
+		p[z][0] = p[z][1] - divergence[z][0] / dtbydx;
+	}
+
+//		printf("error = %0.30f\n", max_delta);
 
 //	if(iter == max_iter)
 	//	printf("report iteration limit exceeded\n");
@@ -646,7 +685,7 @@ void Tick(double dt) {
 
 		// Horizontal velocity (u)
 	//#pragma omp parallel for
-	for (int i = 1; i < cells; ++i) {
+	for (int i = 2; i < cells - 1; ++i) {
 		for (int j = 1; j < cells - 1; ++j) {
 		//	if (fluid[i][j] or fluid[i - 1][j])
 				u[i][j] -= (p[i][j] - p[i - 1][j]) * dtbydx;
@@ -656,7 +695,7 @@ void Tick(double dt) {
 	// Vertical velocity (v)
 //#pragma omp parallel for
 	for (int i = 1; i < cells - 1; ++i) {
-		for (int j = 1; j < cells; ++j) {
+		for (int j = 2; j < cells - 1; ++j) {
 		//		if (fluid[i][j] or  fluid[i][j-1])
 			v[i][j] -= (p[i][j] - p[i][j - 1]) * dtbydx;
 		}
@@ -752,7 +791,7 @@ uniform sampler2D tex;
 
 void main() {
     // Grid parameters
-    const float gridSize = 128.0;
+    const float gridSize = 256;
     const float cellSize = 1.0 / gridSize;
     
     // Calculate grid position

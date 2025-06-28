@@ -29,8 +29,7 @@
               "RelativeToolTip": "..\\..\\..\\..\\..\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.40.33807\\crt\\src\\vcruntime\\debugger_jmc.c",
               "ViewState": "AQIAAAIAAAAAAAAAAAAawBgAAAAAAAAA",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000423|",
-              "WhenOpened": "2025-06-25T13:37:39.937Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-06-25T13:37:39.937Z"
             },
             {
               "$type": "Document",
@@ -38,9 +37,9 @@
               "Title": "main.cpp",
               "DocumentMoniker": "C:\\Users\\kamal\\source\\repos\\Buoyancy-Simulator\\main.cpp",
               "RelativeDocumentMoniker": "main.cpp",
-              "ToolTip": "C:\\Users\\kamal\\source\\repos\\Buoyancy-Simulator\\main.cpp*",
-              "RelativeToolTip": "main.cpp*",
-              "ViewState": "AQIAAEcAAAAAAAAAAAAAAFgAAABAAAAA",
+              "ToolTip": "C:\\Users\\kamal\\source\\repos\\Buoyancy-Simulator\\main.cpp",
+              "RelativeToolTip": "main.cpp",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAgwC4AAAApAAAA",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2025-06-12T17:08:06.608Z",
               "EditorCaption": ""
