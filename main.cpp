@@ -155,19 +155,19 @@ double CalculateNewPressure(int i, int j) {
 	if (i + 1 != cells - 1) {
 	
 		NonSolidCells++;
-		if(fluid[i + 1][j] == 1.f) new_p += p[i + 1][j];
+		if(fluid[i + 1][j]) new_p += p[i + 1][j];
 	}
 	if (j + 1 != cells - 1) {
 		NonSolidCells++;
-		if (fluid[i][j + 1] == 1.f) new_p += p[i][j + 1];
+		if (fluid[i][j + 1]) new_p += p[i][j + 1];
 	}
 	if (i - 1 != 0) {
 		NonSolidCells++;
-		if (fluid[i - 1][j] == 1.f) new_p += p[i - 1][j];
+		if (fluid[i - 1][j]) new_p += p[i - 1][j];
 	}
 	if (j - 1 != 0) {
 		NonSolidCells++;
-		if (fluid[i][j - 1] == 1.f) new_p += p[i][j - 1];
+		if (fluid[i][j - 1]) new_p += p[i][j - 1];
 	}
 
 	new_p -= divergence[i][j];
@@ -203,6 +203,32 @@ void samplevelocity(double px, double py, double* pu, double* pv) {
 			(1 - a) * b * (v[i0][j1] + v[im1][j1]) / 2 +
 			a * (1 - b) * (v[i0][j0] + v[im1][j0]) / 2 +
 			a * b * (v[im1][jm1] + v[i0][jm1]) / 2;
+}
+
+double samplefluid(double px, double py) {
+	// Clamp and interpolate
+	px = clamp(px, 1.0, cells - 1.0); // Avoid sampling boundaries
+	py = clamp(py, 1.0, cells - 1.0);
+
+	int i0 = clamp((int)px, 1, cells - 1);
+	int j0 = clamp((int)py, 1, cells - 1);
+	int i1 = i0 + 1 > cells - 1 ? cells - 1 : i0 + 1;
+	int j1 = j0 + 1 > cells - 1 ? cells - 1 : j0 + 1;
+	int im1 = (i0 - 1) < 1 ? 1 : i0 - 1;
+	int jm1 = (j0 - 1) < 1 ? 1 : j0 - 1;
+
+	double a = px - i0;
+	double b = py - j0;
+
+	double f_11 = (fluid[i0][j0] + fluid[im1][jm1] + fluid[im1][j0] + fluid[i0][jm1]) / 4.0;
+	double f_00 = (fluid[i0][j0] + fluid[i1][j1] + fluid[i1][j0] + fluid[i0][j1]) / 4.0;
+	double f_01 = (fluid[i0][j0] + fluid[i1][j0] + fluid[i0][jm1] + fluid[i1][jm1]) / 4.0;
+	double f_10 = (fluid[i0][j0] + fluid[im1][j0] + fluid[im1][j1] + fluid[i0][j1]) / 4.0;
+
+	return (1 - a) * (1 - b) * f_11
+		+ a * b * f_00
+		+ a * (1 - b) * f_01
+		+ (1 - a) * b * f_10;
 }
 
 int Adiag(int i, int j) {
@@ -403,11 +429,8 @@ void Tick(double dt) {
 			prevX = clamp(prevX, 1.0, cells - 1); // Clamping the prevx between 0 and cells - 1
 			prevY = clamp(prevY, 1.0, cells - 1);
 
-			int pi = (int)(prevX);
-			int pj = (int)(prevY);
-
 		//	if(fluid[pi][pj] == 1.0 and fluid[i][j] == 0.0)
-			temp_fluid[i][j] = fluid[pi][pj];
+			temp_fluid[i][j] = samplefluid(prevX, prevY);
 		}
 	}
 
@@ -645,7 +668,7 @@ void Tick(double dt) {
 
 				// Non Wall cells
 				if (i > 0 and j > 0 and i < cells - 1 and j < cells - 1) {
-					if (fluid[i][j] == 1.f) {
+					if (fluid[i][j]) {
 						old_p = p[i][j];
 
 						float new_p = CalculateNewPressure(i, j);
@@ -812,7 +835,7 @@ uniform sampler2D tex;
 
 void main() {
     // Grid parameters
-    const float gridSize = 256;
+    const float gridSize = 140;
     const float cellSize = 1.0 / gridSize;
     
     // Calculate grid position
@@ -826,7 +849,7 @@ void main() {
     if (isBoundary) {
         fragColor = vec4(1.0, 0.0, 0.0, 1.0);
     } else {
-        float density = texture(tex, texCoord).r;
+        float density = texture(tex, texCoord).r > 0.5? 1.0 : 0.0;
         vec3 bgColor = vec3(0.0, 0.0, 0.0);
         vec3 fluidColor = vec3(0.0, 0.0, 1.0);
         fragColor = vec4(mix(bgColor, fluidColor, density), 1.0);
