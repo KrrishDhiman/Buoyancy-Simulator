@@ -46,6 +46,8 @@ int watercells = 0;
 
 const float omega = 1.9f;
 
+const double fldthreld = 0.1;
+
 const double targetFrameTime = 1.0 / 30.0;  // 30 FPS = 0.033 seconds per frame
 
 const int cells = 140;
@@ -124,11 +126,11 @@ void CalculateDivergence(int i, int j) {
 		}
 
 		else if (i == 1 or i == cells - 2 or j == 1 or j == cells - 2) {
-			double du_dx = (u[i + 1][j]  * (i + 1 == cells - 1 ? 0.0 : 1.0)
-				- u[i][j] *(i == 1 ? 0.0 : 1.0));
+			double du_dx = (u[i + 1][j] * (i + 1 == cells - 1 ? 0.0 : 1.0)
+				- u[i][j] * (i == 1 ? 0.0 : 1.0));
 
-			double dv_dy = (v[i][j + 1]  * (j + 1 == cells - 1 ? 0.0 : 1.0)
-				- v[i][j] *(j == 1 ? 0.0 : 1.0));
+			double dv_dy = (v[i][j + 1] * (j + 1 == cells - 1 ? 0.0 : 1.0)
+				- v[i][j]  *(j == 1 ? 0.0 : 1.0));
 
 			divergence[i][j] = du_dx + dv_dy;
 		}
@@ -337,8 +339,87 @@ void Tick(double dt) {
 		}
 	printf("x=%d, y=%d\n", frames, watercells);*/
 
-		// Advect u and v
-	#pragma omp parallel for 
+
+
+
+	float(*temp_fluid)[cells] = new float[cells][cells];
+	for (int a = 0; a < cells; a++)
+		for (int b = 0; b < cells; b++)
+			temp_fluid[a][b] = 0.f;
+
+	// Advecting the fluid itself
+#pragma omp parallel for 
+	for (int idx = 0; idx < cells * cells; idx++)
+	{
+		int i = idx / cells;
+		int j = idx % cells;
+
+
+
+		if (i > 0 and j > 0 and i < cells - 1 and j < cells - 1) {
+
+			double x = i + 0.50;
+			double y = j + 0.50;
+
+			// Forward Euler
+		/*	float vx = (u[i][j] + u[i + 1][j]) * 0.5f;
+			float vy = (v[i][j] + v[i][j + 1]) * 0.5f;
+
+			float prevX = x - vx * dtbydx;
+			float prevY = y - vy * dtbydx;*/
+
+
+			// RK4
+			// Stage 1 : Velocity at starting point (x, y)
+			double k1x = (u[i][j] + u[i + 1][j]) * 0.5f;
+			double k1y = (v[i][j] + v[i][j + 1]) * 0.5f;
+
+			// Stage 2: Velocity at first midpoint (t - dt/2)
+			double x2 = x - 0.5f * dtbydx * k1x;
+			double y2 = y - 0.5f * dtbydx * k1y;
+			double k2x, k2y;
+			samplevelocity(x2, y2, &k2x, &k2y);
+
+			// Stage 3: Velocity at second midpoint (t - dt/2)
+			double x3 = x - 0.5f * dtbydx * k2x;
+			double y3 = y - 0.5f * dtbydx * k2y;
+			double k3x, k3y;
+			samplevelocity(x3, y3, &k3x, &k3y);
+
+			// Stage 4: Velocity at endpoint (t - dt)
+			double x4 = x - dtbydx * k3x;
+			double y4 = y - dtbydx * k3y;
+			double k4x, k4y;
+			samplevelocity(x4, y4, &k4x, &k4y);
+
+			// Combine velocities with RK4 weights
+			double vx = (k1x + 2 * k2x + 2 * k3x + k4x) / 6.0f;
+			double vy = (k1y + 2 * k2y + 2 * k3y + k4y) / 6.0f;
+
+			// Trace back full step using combined velocity
+			double prevX = x - dtbydx * vx;
+			double prevY = y - dtbydx * vy;
+
+			prevX = clamp(prevX, 1.0, cells - 1); // Clamping the prevx between 0 and cells - 1
+			prevY = clamp(prevY, 1.0, cells - 1);
+
+			int pi = (int)(prevX);
+			int pj = (int)(prevY);
+
+		//	if(fluid[pi][pj] == 1.0 and fluid[i][j] == 0.0)
+			temp_fluid[i][j] = fluid[pi][pj];
+		}
+	}
+
+	auto f = temp_fluid;
+	temp_fluid = fluid;
+	fluid = f;
+	delete[] temp_fluid;
+
+//	printf("Advected the fluid!\n");
+
+			// Advect u and v
+#pragma omp parallel for 
 	for (int idx = 0; idx <= cells * cells; ++idx) {
 		int i = idx / cells;
 		int j = idx % cells;
@@ -434,7 +515,7 @@ void Tick(double dt) {
 		}
 	}
 
-//	printf("Advected u and v!\n");
+	//	printf("Advected u and v!\n");
 
 	auto tmp = u;
 	u = newU;
@@ -449,83 +530,6 @@ void Tick(double dt) {
 
 
 
-
-
-	float(*temp_fluid)[cells] = new float[cells][cells];
-	for (int a = 0; a < cells; a++)
-		for (int b = 0; b < cells; b++)
-			temp_fluid[a][b] = 0.f;
-
-	// Advecting the fluid itself
-#pragma omp parallel for 
-	for (int idx = 0; idx < cells * cells; idx++)
-	{
-		int i = idx / cells;
-		int j = idx % cells;
-
-
-
-		if (i > 0 and j > 0 and i < cells - 1 and j < cells - 1) {
-
-			double x = i + 0.50;
-			double y = j + 0.50;
-
-			// Forward Euler
-		/*	float vx = (u[i][j] + u[i + 1][j]) * 0.5f;
-			float vy = (v[i][j] + v[i][j + 1]) * 0.5f;
-
-			float prevX = x - vx * dtbydx;
-			float prevY = y - vy * dtbydx;*/
-
-
-			// RK4
-			// Stage 1 : Velocity at starting point (x, y)
-			double k1x = (u[i][j] + u[i + 1][j]) * 0.5f;
-			double k1y = (v[i][j] + v[i][j + 1]) * 0.5f;
-
-			// Stage 2: Velocity at first midpoint (t - dt/2)
-			double x2 = x - 0.5f * dtbydx * k1x;
-			double y2 = y - 0.5f * dtbydx * k1y;
-			double k2x, k2y;
-			samplevelocity(x2, y2, &k2x, &k2y);
-
-			// Stage 3: Velocity at second midpoint (t - dt/2)
-			double x3 = x - 0.5f * dtbydx * k2x;
-			double y3 = y - 0.5f * dtbydx * k2y;
-			double k3x, k3y;
-			samplevelocity(x3, y3, &k3x, &k3y);
-
-			// Stage 4: Velocity at endpoint (t - dt)
-			double x4 = x - dtbydx * k3x;
-			double y4 = y - dtbydx * k3y;
-			double k4x, k4y;
-			samplevelocity(x4, y4, &k4x, &k4y);
-
-			// Combine velocities with RK4 weights
-			double vx = (k1x + 2 * k2x + 2 * k3x + k4x) / 6.0f;
-			double vy = (k1y + 2 * k2y + 2 * k3y + k4y) / 6.0f;
-
-			// Trace back full step using combined velocity
-			double prevX = x - dtbydx * vx;
-			double prevY = y - dtbydx * vy;
-
-			prevX = clamp(prevX, 1.0, cells - 1); // Clamping the prevx between 0 and cells - 1
-			prevY = clamp(prevY, 1.0, cells - 1);
-
-			int pi = (int)(prevX);
-			int pj = (int)(prevY);
-
-		//	if(fluid[pi][pj] == 1.0 and fluid[i][j] == 0.0)
-			temp_fluid[i][j] = fluid[pi][pj];
-		}
-	}
-
-	auto f = temp_fluid;
-	temp_fluid = fluid;
-	fluid = f;
-	delete[] temp_fluid;
-
-//	printf("Advected the fluid!\n");
 
 	// apply gravity
 //#pragma omp parallel for 
