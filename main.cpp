@@ -48,7 +48,7 @@ const float omega = 1.9f;
 
 const double fldthreld = 0.1;
 
-const double targetFrameTime = 1.0 / 30.0;  // 30 FPS = 0.033 seconds per frame
+const double targetFrameTime = 1.0 / 25.0;  // 30 FPS = 0.033 seconds per frame
 
 const int cells = 140;
 const double dx = 2.0 / cells;
@@ -79,10 +79,6 @@ double PrevTime = 0.f;
 /// tried g = 1000, UMax 44.7, so with dt = 0.001, dx ~ 0.8
 /// SO dt =  is required... 
 
-bool is_fluid(int i, int j) {
-	return fluid[i][j] == 1.f; // Assuming 1=fluid, 0=air
-}
-
 void mic0();
 
 // Kind of beginplay
@@ -90,7 +86,7 @@ void initialize() {
 
 	for (int a = 0; a < cells; a++)
 		for (int b = 0; b < cells; b++) {
-			if (fabs(a-cells/2)<cells/6  and b < cells / 2 and b != 0 and a != 0 and a != cells - 1 and b != cells - 1) {
+			if (fabs(a-cells/2)<cells/6  and b < 2 * cells / 3 and b != 0 and a != 0 and a != cells - 1 and b != cells - 1 ) {
 				fluid[a][b] = 1.f;
 			}
 			else
@@ -354,7 +350,7 @@ void Tick(double dt) {
 	double dvG = gravity * dt;
 	double dtbydx = dt / dx;
 
-//	printf("Time = %lf\n", 1/dt);
+	printf("Time = %lf\n", 1/dt);
 //	watercells = 0;
 //	frames++;
 
@@ -866,11 +862,11 @@ void main() {
 	glShaderSource(vertexShader, 1, &vertexShaderSrc, 0);
 	glCompileShader(vertexShader);
 	int success;
-	char infoLog[512];
+	char infoLog[cells];
 	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
 	if (!success)
 	{
-		glGetShaderInfoLog(vertexShader, 512, 0, infoLog);
+		glGetShaderInfoLog(vertexShader, cells, 0, infoLog);
 		std::cout << "Failed to compile the vertex shader! ERR: " << infoLog << std::endl;
 	}
 
@@ -880,7 +876,7 @@ void main() {
 	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
 	if (!success)
 	{
-		glGetShaderInfoLog(fragmentShader, 512, 0, infoLog);
+		glGetShaderInfoLog(fragmentShader, cells, 0, infoLog);
 		std::cout << "Failed to compile the fragment shader! ERR: " << infoLog << std::endl;
 	}
 
@@ -891,7 +887,7 @@ void main() {
 	glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
 	if (!success)
 	{
-		glGetProgramInfoLog(shaderProgram, 512, 0, infoLog);
+		glGetProgramInfoLog(shaderProgram, cells, 0, infoLog);
 		std::cout << "Failed to link the shader program! ERR: " << infoLog << std::endl;
 	}
 
