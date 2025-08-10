@@ -20,11 +20,11 @@
      <img width="140" alt="image" src="">
   </a>
 
-  <h3 align="center">PROJECT_NAME</h3>
+  <h3 align="center">EULERIAN FLUID SIMULATOR</h3>
 
   <p align="center">
   <!-- UPDATE -->
-    <i>Project one liner slogan goes here</i>
+    <i>A 2d simulator that models fluid motion on a fixed spatial grid using Eulerian methods</i>
   </p>
 </div>
 
